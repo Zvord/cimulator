@@ -10,6 +10,9 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 - Fixed a test failure in test_simulate_cli_with_profile by including global variables in the simulation summary
 - Added a new test specifically for the `!reference` tag functionality
 - Verified that all tests are now passing
+- Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal
+  - Added --output/-o option to both commands to specify the output file path
+  - Updated tests to verify the new behavior
 
 ## Active Decisions
 1. **Documentation Structure**: Organizing the memory bank with clear separation of concerns:
@@ -52,3 +55,4 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 5. Expand test coverage, particularly for edge cases and real-world configurations
 6. Optimize performance for large configurations
 7. Consider implementing visualization of job dependencies and workflow
+8. Add more user-friendly output messages and error handling for file operations

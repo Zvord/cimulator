@@ -55,6 +55,11 @@ The project is structured as a Python package with a clear modular architecture 
 
 3. **Enhanced Test Coverage**: Added a new test specifically for the `!reference` tag functionality, ensuring that this feature works correctly.
 
+4. **Improved CLI Output Handling**: Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal. This prevents overwhelming the terminal with large outputs and makes it easier to review and process the results.
+   - Added `--output`/`-o` option to both commands to specify the output file path
+   - Updated tests to verify the new behavior
+   - Added user-friendly success messages that show the absolute path to the output file
+
 ## Known Issues
 
 Based on the codebase analysis and user testing, remaining issues or limitations include:
