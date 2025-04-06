@@ -1,0 +1,1 @@
+This is a python tool to validate and simulate Gitlab CI pipelines. It reads the root .gitlab-ci.yml, recursively processing all includes, expands the jobs according to `extends`, evaluates rules and tells which jobs will be run and reports inconsistencies.
