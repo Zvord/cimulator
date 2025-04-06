@@ -1,4 +1,4 @@
-# src/my_package/job_expander.py
+# src/cimulator/job_expander.py
 
 from cimulator.loader import merge_dicts
 
@@ -32,7 +32,10 @@ def expand_job(job_name, all_jobs, cache=None, visited=None):
     visited.add(job_name)
 
     # Make a shallow copy to avoid modifying the original job.
-    job = all_jobs[job_name].copy()
+    job_def = all_jobs[job_name]
+    if not isinstance(job_def, dict):
+        raise Exception(f"Job definition for '{job_name}' is not a dictionary: {type(job_def).__name__}")
+    job = job_def.copy()
 
     # If there is no "extends", the job is already fully defined.
     if 'extends' not in job:

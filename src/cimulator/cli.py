@@ -3,6 +3,7 @@ import sys
 import yaml
 import logging
 import os
+import traceback
 from cimulator.loader import load_and_resolve
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
@@ -50,7 +51,10 @@ def main():
                 f.write(yaml.dump(config, default_flow_style=False))
             print(f"Validation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:
-            print(f"Error during validation: {e}", file=sys.stderr)
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb = traceback.extract_tb(exc_traceback)
+            filename, line, func, text = tb[-1]
+            print(f"Error during validation: {e} (File: {filename}, line {line})", file=sys.stderr)
             sys.exit(1)
 
     elif args.command == "simulate":
@@ -59,8 +63,9 @@ def main():
             ci_config = load_and_resolve(args.ci_file)
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
+            # Also filter out non-dictionary values as they can't be valid jobs
             reserved_keys = {"include", "workflow", "variables", "stages"}
-            jobs = {k: v for k, v in ci_config.items() if k not in reserved_keys}
+            jobs = {k: v for k, v in ci_config.items() if k not in reserved_keys and isinstance(v, dict)}
 
             # Get the workflow configuration (if any).
             workflow_config = ci_config.get("workflow", {})
@@ -78,7 +83,10 @@ def main():
                 f.write(yaml.dump(simulation_summary, default_flow_style=False))
             print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:
-            print(f"Error during simulation: {e}", file=sys.stderr)
+            exc_type, exc_value, exc_traceback = sys.exc_info()
+            tb = traceback.extract_tb(exc_traceback)
+            filename, line, func, text = tb[-1]
+            print(f"Error during simulation: {e} (File: {filename}, line {line})", file=sys.stderr)
             sys.exit(1)
 
 if __name__ == "__main__":
