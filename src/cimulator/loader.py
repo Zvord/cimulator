@@ -24,7 +24,8 @@ class ReferenceTag:
 
         # First, find the node with the given name
         if anchor_name not in document:
-            raise ValueError(f"Unknown reference target: {anchor_name}")
+            print(f"Warning: Unknown reference target: {anchor_name}")
+            return None
 
         current = document[anchor_name]
 
