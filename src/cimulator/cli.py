@@ -2,6 +2,7 @@ import argparse
 import sys
 import yaml
 import logging
+import os
 from cimulator.loader import load_and_resolve
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
@@ -13,11 +14,16 @@ def main():
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # 'validate' subcommand: loads and prints the merged configuration.
+    # 'validate' subcommand: loads and saves the merged configuration to a file.
     validate_parser = subparsers.add_parser("validate", help="Validate GitLab CI configuration")
     validate_parser.add_argument("ci_file", help="Path to the .gitlab-ci.yml file")
+    validate_parser.add_argument(
+        "--output", "-o",
+        help="Path to the output file (default: validation_output.yml)",
+        default="validation_output.yml"
+    )
 
-    # 'simulate' subcommand: runs the simulation.
+    # 'simulate' subcommand: runs the simulation and saves the results to a file.
     simulate_parser = subparsers.add_parser("simulate", help="Simulate GitLab CI pipeline")
     simulate_parser.add_argument("ci_file", help="Path to the .gitlab-ci.yml file")
     simulate_parser.add_argument(
@@ -28,14 +34,21 @@ def main():
         "profile",
         help="Name of the profile in the simulation configuration file to use"
     )
+    simulate_parser.add_argument(
+        "--output", "-o",
+        help="Path to the output file (default: simulation_output.yml)",
+        default="simulation_output.yml"
+    )
 
     args = parser.parse_args()
 
     if args.command == "validate":
         try:
             config = load_and_resolve(args.ci_file)
-            print("Merged GitLab CI configuration:")
-            print(yaml.dump(config, default_flow_style=False))
+            # Save the output to a file instead of printing it
+            with open(args.output, 'w') as f:
+                f.write(yaml.dump(config, default_flow_style=False))
+            print(f"Validation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:
             print(f"Error during validation: {e}", file=sys.stderr)
             sys.exit(1)
@@ -60,8 +73,10 @@ def main():
 
             # Run the simulation.
             simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
-            print("Pipeline Simulation Summary:")
-            print(yaml.dump(simulation_summary, default_flow_style=False))
+            # Save the output to a file instead of printing it
+            with open(args.output, 'w') as f:
+                f.write(yaml.dump(simulation_summary, default_flow_style=False))
+            print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:
             print(f"Error during simulation: {e}", file=sys.stderr)
             sys.exit(1)
