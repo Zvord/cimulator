@@ -76,12 +76,19 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
         simulation_jobs[job_name] = expanded_job
         logger.debug(f"Final expanded job '{job_name}': {expanded_job}")
 
+    # Create a list of job names that will run (excluding template jobs that start with a dot)
+    jobs_list = [job_name for job_name in simulation_jobs.keys() if not job_name.startswith('.')]
+
+    # Filter out template jobs from the simulation_jobs dictionary
+    real_jobs = {job_name: job for job_name, job in simulation_jobs.items() if not job_name.startswith('.')}
+
     simulation_summary = {
         "workflow_run": wf_run,
         "workflow_triggered_rule": wf_rule,
         "workflow_applied_variables": wf_vars,
         "global_variables": simulation_variables,
-        "jobs": simulation_jobs
+        "jobs_list": jobs_list,
+        "jobs": real_jobs
     }
 
     logger.debug("Pipeline simulation complete.")
