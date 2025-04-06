@@ -2,7 +2,7 @@ import os
 import tempfile
 import yaml
 import pytest
-from cimulator.loader import load_yaml, load_and_resolve
+from cimulator.loader import load_yaml, load_and_resolve, resolve_references
 
 def test_reference_tag_handling():
     """Test that the !reference tag is handled correctly."""
@@ -27,6 +27,9 @@ job1:
     try:
         # Load the YAML file
         config = load_yaml(file_path)
+
+        # References are not resolved immediately anymore, so we need to resolve them manually
+        config = resolve_references(config, config)
 
         # Check that the !reference tags were resolved correctly
         assert config["job1"]["script"] == ["echo \"Base script\""]

@@ -60,6 +60,11 @@ The project is structured as a Python package with a clear modular architecture 
    - Updated tests to verify the new behavior
    - Added user-friendly success messages that show the absolute path to the output file
 
+5. **Enhanced Reference Tag Handling**: Improved the handling of GitLab CI `!reference` tags to resolve references after all includes are processed. This fixes issues with references across included files, such as filelists defined in template files being referenced in other files.
+   - Modified the loader.py file to delay reference resolution until after all includes are resolved
+   - Updated the test_reference_tag.py file to account for the new behavior
+   - Verified that references across included files are now resolved correctly
+
 ## Known Issues
 
 Based on the codebase analysis and user testing, remaining issues or limitations include:
