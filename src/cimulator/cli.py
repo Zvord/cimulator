@@ -78,9 +78,53 @@ def main():
 
             # Run the simulation.
             simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
-            # Save the output to a file instead of printing it
+
+            # First, dump the simulation summary to YAML
+            yaml_content = yaml.dump(simulation_summary, default_flow_style=False)
+
+            # Post-process the YAML content to add empty lines between jobs
+            lines = yaml_content.split('\n')
+            processed_lines = []
+            in_jobs_section = False
+            job_indent = None
+
+            # Keep track of whether we've seen the first job
+            first_job = True
+
+            for i, line in enumerate(lines):
+                # Check if we're entering the jobs section
+                if line.startswith('jobs:'):
+                    in_jobs_section = True
+                    processed_lines.append(line)
+                    continue
+
+                # If we're in the jobs section and this line defines a job (not indented)
+                if in_jobs_section and line and not line.startswith(' '):
+                    # We've moved past the jobs section
+                    in_jobs_section = False
+                    processed_lines.append(line)
+                    continue
+
+                # If we're in the jobs section and this is a job entry
+                if in_jobs_section and line.strip() and line.startswith('  '):
+                    # Determine the indentation level of job entries if not already set
+                    if job_indent is None and not line.startswith('    '):
+                        job_indent = len(line) - len(line.lstrip())
+
+                    # If this is a job entry (not a property of a job)
+                    if job_indent is not None and line.startswith(' ' * job_indent) and not line.startswith(' ' * (job_indent + 2)):
+                        # Add an empty line before the job, but not before the first job
+                        if not first_job:
+                            processed_lines.append('')
+                        else:
+                            first_job = False
+
+                processed_lines.append(line)
+
+            # Save the processed content to the output file
             with open(args.output, 'w') as f:
-                f.write(yaml.dump(simulation_summary, default_flow_style=False))
+                f.write('\n'.join(processed_lines))
+
             print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
