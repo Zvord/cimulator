@@ -1,0 +1,78 @@
+# Cimulator Project Rules
+
+## Code Style and Patterns
+
+### Module Organization
+- Each major component of the system is in its own module
+- Modules are named descriptively based on their primary responsibility
+- Public functions are defined at the module level
+- Helper functions are typically defined within the module scope
+
+### Function Design
+- Functions have clear, single responsibilities
+- Function names are descriptive and follow the pattern `verb_noun()`
+- Functions include docstrings explaining their purpose, parameters, and return values
+- Complex operations are broken down into smaller, focused functions
+
+### Error Handling
+- Exceptions are used for error conditions
+- Error messages are descriptive and actionable
+- The CLI module catches and formats exceptions for user-friendly output
+
+### Recursion Pattern
+- Recursive functions are used for traversing nested structures:
+  - `resolve_includes()` for processing nested YAML includes
+  - `expand_job()` for resolving job dependencies
+  - `expand_variables()` for traversing nested data structures
+
+### Dictionary Merging
+- Deep dictionary merging is a core pattern in the codebase
+- The `merge_dicts()` function implements GitLab CI's specific merging rules
+- Dictionaries are merged recursively, with values from the incoming dictionary overriding those in the base
+
+## Project Workflow
+
+### Development Process
+- Code is organized into focused modules with clear responsibilities
+- Tests are written for key functionality
+- The project uses Poetry for dependency management
+
+### Testing Approach
+- Unit tests focus on individual components
+- Test files are named to match the module they test (e.g., `test_loader.py` tests `loader.py`)
+- Complex workflows are tested with dedicated test files (e.g., `test_workflow_complex.py`)
+
+## GitLab CI Simulation Specifics
+
+### YAML Processing
+- PyYAML is used for parsing YAML files
+- Empty YAML files are treated as empty dictionaries
+- Includes are resolved recursively before further processing
+
+### Job Processing
+- Jobs are identified as top-level keys that are not reserved keywords
+- Reserved keywords include: "include", "workflow", "variables", "stages"
+- Job expansion follows GitLab CI's rules for the `extends` mechanism
+
+### Rule Evaluation
+- Conditions are preprocessed to convert GitLab CI syntax to Python-evaluable expressions
+- Regex patterns in conditions are handled with a special `regex_match()` function
+- The first matching rule determines the behavior
+
+### Variable Expansion
+- Variables can be referenced as `$VAR` or `${VAR}`
+- Variable expansion is applied recursively to all strings in job definitions
+- Variables from workflow and job rules are merged with global variables
+
+## CLI Usage Patterns
+
+### Command Structure
+- The CLI uses subcommands for different operations:
+  - `validate`: Validates GitLab CI configuration
+  - `simulate`: Simulates pipeline execution
+- Each subcommand has its own set of arguments
+
+### Input/Output
+- Input is provided via file paths
+- Output is formatted as YAML for easy reading
+- Errors are directed to stderr with descriptive messages
