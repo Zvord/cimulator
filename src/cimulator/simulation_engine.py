@@ -45,7 +45,11 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     logger.debug(f"Workflow evaluation: should_run={wf_run}, triggered_condition={wf_triggered_condition}, variables={wf_vars}")
 
     # Merge workflow variables with the global variables.
-    simulation_variables = global_variables.copy()
+    if not isinstance(global_variables, dict):
+        logger.warning(f"Global variables is not a dictionary: {global_variables}")
+        simulation_variables = {}
+    else:
+        simulation_variables = global_variables.copy()
     simulation_variables.update(wf_vars)
     logger.debug(f"Global variables after merging workflow variables: {simulation_variables}")
 
@@ -76,6 +80,7 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
         "workflow_run": wf_run,
         "workflow_triggered_rule": wf_rule,
         "workflow_applied_variables": wf_vars,
+        "global_variables": simulation_variables,
         "jobs": simulation_jobs
     }
 

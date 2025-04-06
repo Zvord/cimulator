@@ -24,6 +24,10 @@ def main():
         "simulation_config",
         help="Path to the simulation configuration YAML file (defines global variables, etc.)"
     )
+    simulate_parser.add_argument(
+        "profile",
+        help="Name of the profile in the simulation configuration file to use"
+    )
 
     args = parser.parse_args()
 
@@ -49,8 +53,10 @@ def main():
             workflow_config = ci_config.get("workflow", {})
             # Load simulation configuration (global variables etc.)
             sim_config = load_simulation_config(args.simulation_config)
-            # Assume global simulation variables are under "simulation" -> "variables"
-            global_vars = sim_config.get("simulation", {}).get("variables", {})
+            # Get the variables from the specified profile
+            if args.profile not in sim_config:
+                raise ValueError(f"'{args.profile}' is not a valid key in the simulation configuration file. Expected keys: {list(sim_config.keys())}")
+            global_vars = sim_config.get(args.profile, {})
 
             # Run the simulation.
             simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
