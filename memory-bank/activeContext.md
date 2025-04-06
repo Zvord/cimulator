@@ -13,6 +13,10 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 - Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal
   - Added --output/-o option to both commands to specify the output file path
   - Updated tests to verify the new behavior
+- Improved reference tag handling to resolve references after all includes are processed
+  - Modified the loader.py file to delay reference resolution until after all includes are resolved
+  - Updated the test_reference_tag.py file to account for the new behavior
+  - Verified that references across included files are now resolved correctly
 
 ## Active Decisions
 1. **Documentation Structure**: Organizing the memory bank with clear separation of concerns:
@@ -33,7 +37,7 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
    - CLI Module: For providing the command-line interface
 
 ## Current Considerations
-1. **YAML Tag Support**: We've implemented support for the GitLab CI `!reference` tag, but there may be other GitLab CI-specific YAML tags that need to be handled.
+1. **YAML Tag Support**: We've implemented support for the GitLab CI `!reference` tag and improved its handling to resolve references after all includes are processed. There may be other GitLab CI-specific YAML tags that need to be handled.
 
 2. **Code Completeness**: The codebase appears to have implemented most of the core functionality described in the implementation plan, but further analysis is needed to determine if any features are missing.
 

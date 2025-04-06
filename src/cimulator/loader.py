@@ -92,12 +92,11 @@ def load_yaml(file_path):
     If the file is empty, return an empty dictionary.
     Uses a custom loader that supports GitLab CI-specific YAML tags.
 
-    This function also resolves any !reference tags in the loaded document.
+    Note: This function does NOT resolve !reference tags. References will be
+    resolved later, after all includes are processed and jobs are expanded.
     """
     with open(file_path, 'r') as f:
         document = yaml.load(f, Loader=GitLabCILoader) or {}
-        # Resolve any reference tags in the document
-        document = resolve_references(document, document)
         return document
 
 def merge_dicts(base, incoming):
@@ -185,6 +184,8 @@ def load_and_resolve(file_path):
     print(f"Base path: {base_path}")
     config = load_yaml(file_path)
     resolved_config = resolve_includes(config, base_path, base_path)
+    # Now that all includes are resolved, resolve any reference tags
+    resolved_config = resolve_references(resolved_config, resolved_config)
     return resolved_config
 
 # Example usage:
