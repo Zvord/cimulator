@@ -10,6 +10,15 @@ def regex_match(value, pattern):
     except Exception:
         return False
 
+def regex_not_match(value, pattern):
+    """
+    Check if the value does NOT match the regex pattern.
+    """
+    try:
+        return re.search(pattern, str(value)) is None
+    except Exception:
+        return True
+
 def preprocess_condition(condition):
     """
     Transform a condition string into a Python evaluable expression.
@@ -26,10 +35,11 @@ def preprocess_condition(condition):
     # Replace && and || with Python operators.
     condition = condition.replace("&&", " and ").replace("||", " or ")
 
-    # Process regex operator: replace patterns like $VAR =~ /regex/ or $VAR =~ "/regex/"
+    # Process regex operators: =~ (match) and !~ (not match)
     def regex_sub(match):
         left = match.group(1)  # e.g., $CI_MERGE_REQUEST_TITLE
-        pattern = match.group(2)  # e.g., /^(...)/ or "/^(...)/"
+        operator = match.group(2)  # =~ or !~
+        pattern = match.group(3)  # e.g., /^(...)/ or "/^(...)/"
 
         # Check if the pattern is quoted
         if pattern.startswith('"') and pattern.endswith('"'):
@@ -41,13 +51,18 @@ def preprocess_condition(condition):
 
         # Remove the '$' from the variable name
         left_var = left[1:]
-        return f"regex_match({left_var}, r'{pattern_inner}')"
 
-    # First, try to match patterns with quotes: $VAR =~ "/pattern/"
-    condition = re.sub(r'(\$\w+)\s*=~\s*"(\/.+?\/)"', regex_sub, condition)
+        # Use the appropriate function based on the operator
+        if operator == "=~":
+            return f"regex_match({left_var}, r'{pattern_inner}')"
+        else:  # operator == "!~"
+            return f"regex_not_match({left_var}, r'{pattern_inner}')"
 
-    # Then, try to match patterns without quotes: $VAR =~ /pattern/
-    condition = re.sub(r'(\$\w+)\s*=~\s*(\/.+?\/)', regex_sub, condition)
+    # First, try to match patterns with quotes: $VAR =~ "/pattern/" or $VAR !~ "/pattern/"
+    condition = re.sub(r'(\$\w+)\s*(=~|!~)\s*"(\/.+?\/)"', regex_sub, condition)
+
+    # Then, try to match patterns without quotes: $VAR =~ /pattern/ or $VAR !~ /pattern/
+    condition = re.sub(r'(\$\w+)\s*(=~|!~)\s*(\/.+?\/)', regex_sub, condition)
 
     # Replace any remaining variables of the form $VAR with VAR.
     condition = re.sub(r'\$(\w+)', r'\1', condition)
@@ -60,13 +75,14 @@ def evaluate_condition(condition, variables):
     Returns True if the condition is satisfied, False otherwise.
     """
     # Special case for regex conditions
-    if "=~" in condition:
+    if "=~" in condition or "!~" in condition:
         # Process the condition directly using the original preprocess_condition function
         processed = preprocess_condition(condition)
         # Create an evaluation environment: supply all variable values
         eval_env = {key: value for key, value in variables.items()}
-        # Add the regex_match helper
+        # Add the regex helpers
         eval_env["regex_match"] = regex_match
+        eval_env["regex_not_match"] = regex_not_match
         try:
             return bool(eval(processed, {"__builtins__": {}}, eval_env))
         except Exception as e:
@@ -95,8 +111,9 @@ def evaluate_condition(condition, variables):
 
     # Create an evaluation environment: supply all variable values
     eval_env = {key: value for key, value in variables.items()}
-    # Add the regex_match helper
+    # Add the regex helpers
     eval_env["regex_match"] = regex_match
+    eval_env["regex_not_match"] = regex_not_match
 
     try:
         return bool(eval(processed, {"__builtins__": {}}, eval_env))
