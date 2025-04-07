@@ -74,23 +74,21 @@ def evaluate_condition(condition, variables):
             return False
 
     # For conditions with variable references like "$COVERAGE_TOOL == $TOOL"
-    # First, expand all variables in the condition
-    expanded_condition = condition
+    # Use a regex-based approach to expand variables to avoid issues with variable names
+    # that are prefixes of other variable names
 
-    # Find all variable references in the condition
-    import re
-    var_refs = re.findall(r'\$(\w+)', condition)
-
-    # For each variable reference, replace it with its value if it exists in variables
-    # or with an empty string if it doesn't exist
-    for var_name in var_refs:
+    def replace_var(match):
+        var_name = match.group(1)
         var_value = variables.get(var_name, "")  # Default to empty string for non-existing variables
         if isinstance(var_value, str):
             # For string values, we need to add quotes
-            expanded_condition = expanded_condition.replace(f"${var_name}", f'"{var_value}"')
+            return f'"{var_value}"'
         else:
             # For non-string values, we can just use the value directly
-            expanded_condition = expanded_condition.replace(f"${var_name}", str(var_value))
+            return str(var_value)
+
+    # Use regex to find and replace all variable references
+    expanded_condition = re.sub(r'\$(\w+)', replace_var, condition)
 
     # Now process the expanded condition
     processed = preprocess_condition(expanded_condition)
