@@ -9,12 +9,14 @@ flowchart TD
     CLI[CLI Module] --> Loader[Loader Module]
     CLI --> Config[Configuration Module]
     CLI --> SimEngine[Simulation Engine]
+    CLI --> Validator[Validator Module]
 
     Loader --> JobExpander[Job Expander]
 
     SimEngine --> JobExpander
     SimEngine --> Workflow[Workflow Evaluator]
     SimEngine --> VarExpander[Variable Expander]
+    SimEngine --> Validator
 
     Config --> SimEngine
 ```
@@ -64,34 +66,50 @@ flowchart TD
   - `simulate_pipeline()`: Simulates a pipeline by processing jobs, evaluating workflow rules, and expanding variables.
 - **Design Pattern**: Facade pattern providing a simplified interface to the complex subsystems.
 
-### 7. CLI Module
+### 7. Validator Module
+- **Responsibility**: Validates job dependencies and relationships.
+- **Key Functions**:
+  - `validate_job_dependencies()`: Validates that all referenced jobs exist.
+  - `validate_job_needs_dependencies()`: Validates that all needed jobs will run in the pipeline.
+- **Design Pattern**: Visitor pattern for traversing and validating job relationships.
+
+### 8. CLI Module
 - **Responsibility**: Provides the command-line interface.
 - **Key Functions**:
   - `main()`: Entry point for the CLI.
+  - `setup_logging()`: Configures logging for the application.
 - **Design Pattern**: Command pattern for encapsulating requests as objects.
 
 ## Data Flow
 
 1. **Input Processing**:
    - CLI receives input paths for the GitLab CI file and simulation configuration file.
+   - CLI configures logging based on the specified log level.
 
 2. **File Loading**:
    - Loader module reads the root YAML and all included files, returning a merged configuration dictionary.
 
-3. **Job Extraction & Expansion**:
+3. **Validation** (for validate command):
+   - Extract job definitions.
+   - Validator module checks for jobs that extend or need non-existing jobs.
+   - If validation errors are found, the process exits with an error code.
+
+4. **Job Extraction & Expansion** (for simulate command):
    - Extract job definitions.
    - Expand jobs by processing extends entries with the job expander module.
 
-4. **Workflow Processing**:
+5. **Workflow Processing**:
    - Parse the workflow section and evaluate it based on the configuration manager's variable values.
 
-5. **Variable Expansion**:
+6. **Variable Expansion**:
    - The variable expander applies configuration-provided variable values to the expanded jobs.
 
-6. **Simulation**:
+7. **Simulation**:
    - The simulation engine takes the final job definitions and workflow decisions to simulate the pipeline.
+   - Validator module checks for jobs that need other jobs which won't run in the pipeline.
+   - If dependency errors are found, the process exits with an error code.
 
-7. **Output**:
+8. **Output**:
    - Results (validation output, simulation summary, or error messages) are printed to the console.
 
 ## Key Technical Decisions
@@ -100,4 +118,6 @@ flowchart TD
 2. **Deep Dictionary Merging**: Implementing GitLab's specific rules for merging dictionaries and arrays.
 3. **Condition Evaluation**: Converting GitLab CI condition syntax to Python-evaluable expressions.
 4. **Modular Design**: Separating concerns into distinct modules for better maintainability.
-5. **Logging**: Using Python's logging module for detailed debugging information.
+5. **Logging**: Using Python's logging module for detailed debugging information with configurable verbosity.
+6. **Validation**: Implementing comprehensive validation for job dependencies to catch configuration errors early.
+7. **Error Handling**: Using clear, actionable error messages that explain the specific issues found.

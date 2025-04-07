@@ -1,4 +1,5 @@
 import re
+from cimulator.variable_expander import expand_variables, expand_variables_in_string
 
 def regex_match(value, pattern):
     """
@@ -19,8 +20,8 @@ def preprocess_condition(condition):
       - Replace variable references (e.g. $VAR) with plain variable names (VAR).
 
     Example:
-      Input:  '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^(\[Draft\]|\(Draft\)|Draft:)/'
-      Output: 'CI_PIPELINE_SOURCE == "merge_request_event" and regex_match(CI_MERGE_REQUEST_TITLE, r"^(\[Draft\]|\(Draft\)|Draft:)")'
+      Input:  '$CI_PIPELINE_SOURCE == "merge_request_event" && $CI_MERGE_REQUEST_TITLE =~ /^(\\[Draft\\]|\\(Draft\\)|Draft:)/'
+      Output: 'CI_PIPELINE_SOURCE == "merge_request_event" and regex_match(CI_MERGE_REQUEST_TITLE, r"^(\\[Draft\\]|\\(Draft\\)|Draft:)")'
     """
     # Replace && and || with Python operators.
     condition = condition.replace("&&", " and ").replace("||", " or ")
@@ -48,14 +49,51 @@ def evaluate_condition(condition, variables):
 
     Returns True if the condition is satisfied, False otherwise.
     """
-    processed = preprocess_condition(condition)
-    # Create an evaluation environment: supply all variable values.
-    eval_env = {key: value for key, value in variables.items()} # TODO isn't it the same as variables.copy()?
-    # Add the regex_match helper.
+    # Special case for regex conditions
+    if "=~" in condition:
+        # Process the condition directly using the original preprocess_condition function
+        processed = preprocess_condition(condition)
+        # Create an evaluation environment: supply all variable values
+        eval_env = {key: value for key, value in variables.items()}
+        # Add the regex_match helper
+        eval_env["regex_match"] = regex_match
+        try:
+            return bool(eval(processed, {"__builtins__": {}}, eval_env))
+        except Exception as e:
+            print(f"Error evaluating regex condition '{condition}': {e}")
+            return False
+
+    # For conditions with variable references like "$COVERAGE_TOOL == $TOOL"
+    # First, expand all variables in the condition
+    expanded_condition = condition
+
+    # Find all variable references in the condition
+    import re
+    var_refs = re.findall(r'\$(\w+)', condition)
+
+    # For each variable reference, replace it with its value if it exists in variables
+    # or with an empty string if it doesn't exist
+    for var_name in var_refs:
+        var_value = variables.get(var_name, "")  # Default to empty string for non-existing variables
+        if isinstance(var_value, str):
+            # For string values, we need to add quotes
+            expanded_condition = expanded_condition.replace(f"${var_name}", f'"{var_value}"')
+        else:
+            # For non-string values, we can just use the value directly
+            expanded_condition = expanded_condition.replace(f"${var_name}", str(var_value))
+
+    # Now process the expanded condition
+    processed = preprocess_condition(expanded_condition)
+
+    # Create an evaluation environment: supply all variable values
+    eval_env = {key: value for key, value in variables.items()}
+    # Add the regex_match helper
     eval_env["regex_match"] = regex_match
+
     try:
         return bool(eval(processed, {"__builtins__": {}}, eval_env))
-    except Exception:
+    except Exception as e:
+        print(f"Error evaluating condition '{condition}' (expanded to '{expanded_condition}'): {e}")
         return False
 
 def evaluate_rules(rules, variables):
@@ -81,7 +119,9 @@ def evaluate_rules(rules, variables):
             # Determine the 'when' behavior.
             when = rule.get("when", "always")
             should_run = (when != "never") # TODO what is this parenthesis syntax?
-            applied_variables = rule.get("variables", {})
+            # Get the variables from the rule and expand them
+            rule_variables = rule.get("variables", {})
+            applied_variables = expand_variables(rule_variables, variables)
             return (should_run, rule, applied_variables, condition)
     return (False, None, {}, None)
 

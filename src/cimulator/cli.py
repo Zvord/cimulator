@@ -4,15 +4,48 @@ import yaml
 import logging
 import os
 import traceback
+from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 from cimulator.loader import load_and_resolve
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
 from cimulator.config import load_simulation_config
+from cimulator.validator import validate_job_dependencies
+
+def setup_logging(level):
+    """
+    Set up logging configuration for the entire application.
+
+    Parameters:
+        level (int): The logging level to use (e.g., logging.DEBUG, logging.INFO)
+    """
+    # Configure the root logger
+    root_logger = logging.getLogger()
+    root_logger.setLevel(level)
+
+    # Remove any existing handlers to avoid duplicate logs
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    # Add a console handler with a specific format
+    ch = logging.StreamHandler()
+    ch.setLevel(level)
+    formatter = logging.Formatter('[%(levelname)s] %(message)s')
+    ch.setFormatter(formatter)
+    root_logger.addHandler(ch)
 
 def main():
     parser = argparse.ArgumentParser(
         description="GitLab CI Simulator - Validate and simulate GitLab CI pipelines."
     )
+
+    # Add global arguments
+    parser.add_argument(
+        "--log-level", "-l",
+        choices=["debug", "info", "warning", "error", "critical"],
+        default="info",
+        help="Set the logging level (default: info)"
+    )
+
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # 'validate' subcommand: loads and saves the merged configuration to a file.
@@ -43,9 +76,33 @@ def main():
 
     args = parser.parse_args()
 
+    # Set up logging based on the specified level
+    log_level_map = {
+        "debug": DEBUG,
+        "info": INFO,
+        "warning": WARNING,
+        "error": ERROR,
+        "critical": CRITICAL
+    }
+    setup_logging(log_level_map[args.log_level])
+
     if args.command == "validate":
         try:
             config = load_and_resolve(args.ci_file)
+
+            # Extract jobs from the configuration
+            reserved_keys = {"include", "workflow", "variables", "stages"}
+            jobs = {k: v for k, v in config.items() if k not in reserved_keys and isinstance(v, dict)}
+
+            # Validate job dependencies
+            validation_errors = validate_job_dependencies(jobs)
+
+            if validation_errors:
+                print("Validation failed with the following errors:", file=sys.stderr)
+                for error in validation_errors:
+                    print(f"  - {error}", file=sys.stderr)
+                sys.exit(1)
+
             # Save the output to a file instead of printing it
             with open(args.output, 'w') as f:
                 f.write(yaml.dump(config, default_flow_style=False))
@@ -124,6 +181,12 @@ def main():
             # Save the processed content to the output file
             with open(args.output, 'w') as f:
                 f.write('\n'.join(processed_lines))
+
+            # Check for dependency errors (show as warnings, not hard errors)
+            if simulation_summary.get("dependency_errors"):
+                print("\nWarnings about job dependencies:", file=sys.stderr)
+                for error in simulation_summary["dependency_errors"]:
+                    print(f"  - {error}", file=sys.stderr)
 
             print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:

@@ -2,16 +2,10 @@ import logging
 from cimulator.job_expander import expand_all_jobs
 from cimulator.workflow import evaluate_workflow, evaluate_rules
 from cimulator.variable_expander import expand_variables
+from cimulator.validator import validate_job_needs_dependencies
 
-# Set up logging for the simulation engine.
+# Get the logger for this module
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.DEBUG)
-if not logger.handlers:
-    ch = logging.StreamHandler()
-    ch.setLevel(logging.DEBUG)
-    formatter = logging.Formatter('[%(levelname)s] %(message)s')
-    ch.setFormatter(formatter)
-    logger.addHandler(ch)
 
 def simulate_pipeline(all_jobs, workflow_config, global_variables):
     """
@@ -60,21 +54,37 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     for job_name, job in expanded_jobs.items():
         logger.debug(f"Processing job '{job_name}': {job}")
 
+        # First, expand variables in the job's variables section
+        job_variables = job.get("variables", {})
+        expanded_job_variables = expand_variables(job_variables, simulation_variables)
+
+        # Create a copy of the job with expanded variables
+        job_with_expanded_variables = job.copy()
+        job_with_expanded_variables["variables"] = expanded_job_variables
+
+        # Update the simulation variables with the expanded job variables
+        job_simulation_variables = simulation_variables.copy()
+        job_simulation_variables.update(expanded_job_variables)
+
         # Evaluate job-level rules if they exist.
         job_rules = job.get("rules")
         if job_rules:
-            should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, simulation_variables)
+            # Use the job's expanded variables when evaluating the job's rules
+            should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables)
             logger.debug(f"Job '{job_name}' rules evaluation: should_run={should_run}, triggered_condition={triggered_condition}, variables={job_vars}")
             if not should_run:
                 logger.debug(f"Job '{job_name}' will be skipped based on its rules.")
                 continue
             # Merge job-specific variables into the simulation variables.
-            simulation_variables.update(job_vars)
+            job_simulation_variables.update(job_vars)
 
-        # Expand variables in the job definition.
-        expanded_job = expand_variables(job, simulation_variables)
+        # Expand all variables in the job definition.
+        expanded_job = expand_variables(job_with_expanded_variables, job_simulation_variables)
         simulation_jobs[job_name] = expanded_job
         logger.debug(f"Final expanded job '{job_name}': {expanded_job}")
+
+        # Update the global simulation variables with the job's variables
+        simulation_variables.update(job_simulation_variables)
 
     # Create a list of job names that will run (excluding template jobs that start with a dot)
     jobs_list = [job_name for job_name in simulation_jobs.keys() if not job_name.startswith('.')]
@@ -82,13 +92,22 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     # Filter out template jobs from the simulation_jobs dictionary
     real_jobs = {job_name: job for job_name, job in simulation_jobs.items() if not job_name.startswith('.')}
 
+    # Check for needs dependencies on jobs that won't run
+    running_jobs = set(jobs_list)
+    dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
+
+    # Include all expanded jobs (including template jobs) for debugging
+    all_expanded_jobs = {job_name: expand_variables(job, simulation_variables) for job_name, job in expanded_jobs.items()}
+
     simulation_summary = {
         "workflow_run": wf_run,
         "workflow_triggered_rule": wf_rule,
         "workflow_applied_variables": wf_vars,
         "global_variables": simulation_variables,
         "jobs_list": jobs_list,
-        "jobs": real_jobs
+        "jobs": real_jobs,
+        "dependency_errors": dependency_errors,
+        "all_expanded_jobs": all_expanded_jobs  # Include all expanded jobs with variables substituted
     }
 
     logger.debug("Pipeline simulation complete.")
