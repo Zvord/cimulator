@@ -65,6 +65,30 @@ The project is structured as a Python package with a clear modular architecture 
    - Updated the test_reference_tag.py file to account for the new behavior
    - Verified that references across included files are now resolved correctly
 
+6. **Added Configurable Logging Level**: Implemented a command-line option to control the verbosity of logging output, making it easier to debug issues or run with minimal output.
+   - Added a global `--log-level`/`-l` argument to the CLI with choices: debug, info, warning, error, critical
+   - Centralized logging configuration in the CLI module with a `setup_logging()` function
+   - Removed duplicate logging setup in simulation_engine.py
+   - Set INFO as the default log level, with DEBUG available for detailed output when needed
+
+7. **Enhanced Job Dependency Validation**: Added comprehensive validation for job dependencies to catch configuration errors early.
+   - Created a new validator module with dedicated validation functions
+   - Added validation in the `validate` command to check for jobs that extend or need non-existing jobs
+   - Added validation in the `simulate` command to check for jobs that need other jobs which won't run in the pipeline
+   - Implemented clear error messages that explain the specific dependency issues
+   - Added unit tests for the new validation functionality
+   - Enhanced to support GitLab CI's complex "needs" format (dictionary with 'job' key) for advanced job dependencies
+   - Fixed validation to properly handle template jobs (starting with a dot) to avoid false validation errors
+   - Added comprehensive tests for template job validation
+   - Changed dependency errors to warnings in the simulate command for better usability
+   - Added all expanded jobs with variables substituted to the simulation output for debugging
+   - Fixed variable expansion in rules to properly handle variables in conditions and rule variables
+   - Fixed a bug where variables in rule conditions were being expanded incorrectly
+   - Improved variable expansion in job definitions to correctly handle nested variables
+   - Added special handling for regex conditions in rule evaluation
+   - Fixed handling of non-existing variables to expand them to empty strings
+   - Added comprehensive tests for non-existing variables in various contexts
+
 ## Known Issues
 
 Based on the codebase analysis and user testing, remaining issues or limitations include:
@@ -73,7 +97,7 @@ Based on the codebase analysis and user testing, remaining issues or limitations
 
 2. **Incomplete GitLab CI Feature Support**: Some advanced GitLab CI features may not be fully supported yet.
 
-3. **Limited Validation**: The `validate` command currently only checks if the YAML can be parsed and merged, but doesn't validate against GitLab CI's schema or best practices.
+3. **Limited Validation**: While we've added validation for job dependencies, there are still other aspects of GitLab CI configuration that could benefit from validation against GitLab CI's schema and best practices.
 
 4. **Performance with Large Configurations**: The recursive nature of include resolution and job expansion could lead to performance issues with very large or complex configurations.
 

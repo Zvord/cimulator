@@ -17,6 +17,26 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
   - Modified the loader.py file to delay reference resolution until after all includes are resolved
   - Updated the test_reference_tag.py file to account for the new behavior
   - Verified that references across included files are now resolved correctly
+- Added configurable logging level to control debug output
+  - Added a global --log-level/-l argument to the CLI
+  - Centralized logging configuration in the CLI module
+  - Removed duplicate logging setup in simulation_engine.py
+  - Default log level is now INFO, with DEBUG available for detailed output
+- Enhanced validation for job dependencies
+  - Added validation for jobs that extend or need non-existing jobs in the validate command
+  - Added validation for jobs that need other jobs which won't run in the pipeline in the simulate command
+  - Created a new validator module with dedicated validation functions
+  - Added tests for the new validation functionality
+  - Fixed handling of complex "needs" format (dictionary with 'job' key) to support GitLab CI's advanced syntax
+  - Fixed validation to skip template jobs (starting with a dot) since they will never run
+  - Added tests for template job validation
+  - Changed dependency errors to warnings in the simulate command (not hard errors)
+  - Added all expanded jobs with variables substituted to the simulation output for debugging
+  - Fixed variable expansion in rules to properly handle variables in conditions and rule variables
+  - Fixed a bug where template jobs were incorrectly validated for dependencies
+  - Improved variable expansion in job definitions to correctly handle nested variables and variable references in rule conditions
+  - Fixed handling of non-existing variables to expand them to empty strings instead of causing errors
+  - Added tests for non-existing variables in various contexts
 
 ## Active Decisions
 1. **Documentation Structure**: Organizing the memory bank with clear separation of concerns:
@@ -55,8 +75,10 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 1. Test the `!reference` tag implementation with real GitLab CI configuration files
 2. Identify and implement support for other GitLab CI-specific YAML tags if needed
 3. Enhance error handling for edge cases in YAML parsing and job expansion
-4. Improve validation against GitLab CI's schema and best practices
+4. Further improve validation against GitLab CI's schema and best practices
 5. Expand test coverage, particularly for edge cases and real-world configurations
 6. Optimize performance for large configurations
 7. Consider implementing visualization of job dependencies and workflow
 8. Add more user-friendly output messages and error handling for file operations
+9. Add tests for the new logging level functionality
+10. Test the new validation functionality with real-world GitLab CI configurations
