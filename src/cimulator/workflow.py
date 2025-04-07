@@ -26,18 +26,28 @@ def preprocess_condition(condition):
     # Replace && and || with Python operators.
     condition = condition.replace("&&", " and ").replace("||", " or ")
 
-    # Process regex operator: replace patterns like $VAR =~ /regex/
+    # Process regex operator: replace patterns like $VAR =~ /regex/ or $VAR =~ "/regex/"
     def regex_sub(match):
         left = match.group(1)  # e.g., $CI_MERGE_REQUEST_TITLE
-        pattern = match.group(2)  # e.g., /^(...)/
-        # Remove leading/trailing slashes from the regex literal.
-        pattern_inner = pattern.strip('/')
-        # Remove the '$' from the variable name.
+        pattern = match.group(2)  # e.g., /^(...)/ or "/^(...)/"
+
+        # Check if the pattern is quoted
+        if pattern.startswith('"') and pattern.endswith('"'):
+            # Remove the quotes and then the leading/trailing slashes
+            pattern_inner = pattern[1:-1].strip('/')
+        else:
+            # Just remove leading/trailing slashes
+            pattern_inner = pattern.strip('/')
+
+        # Remove the '$' from the variable name
         left_var = left[1:]
         return f"regex_match({left_var}, r'{pattern_inner}')"
 
-    # This regex finds patterns of the form: $VAR =~ /pattern/
-    condition = re.sub(r'(\$\w+)\s*=~\s*(\/[^\/]+\/)', regex_sub, condition)
+    # First, try to match patterns with quotes: $VAR =~ "/pattern/"
+    condition = re.sub(r'(\$\w+)\s*=~\s*"(\/.+?\/)"', regex_sub, condition)
+
+    # Then, try to match patterns without quotes: $VAR =~ /pattern/
+    condition = re.sub(r'(\$\w+)\s*=~\s*(\/.+?\/)', regex_sub, condition)
 
     # Replace any remaining variables of the form $VAR with VAR.
     condition = re.sub(r'\$(\w+)', r'\1', condition)
