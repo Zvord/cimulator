@@ -96,5 +96,6 @@ def test_variable_expansion_in_rule_conditions():
     job = simulation["jobs"]["Component Feature Test"]
     assert job is not None
 
-    # Check that the S3_PATH variable is correctly expanded
+    # Check that the S3_PATH variable is correctly expanded within the job's scope
+    # With proper variable scoping, MODULE and TOOL should be expanded from the job's own variables
     assert job["variables"]["S3_PATH"] == "project/component/tool1"

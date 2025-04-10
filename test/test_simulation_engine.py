@@ -55,5 +55,5 @@ def test_simulate_pipeline():
     assert "job2" in jobs
     # Check that variable expansion happened.
     assert jobs["job1"]["script"] == "echo Hello from push"
-    # job2 uses the global variable, but it may have been overridden by workflow rules.
-    assert jobs["job2"]["script"] == "echo Hello from push"
+    # job2 uses the global variable, which should not be affected by job1's variables
+    assert jobs["job2"]["script"] == "echo Default Greeting"
