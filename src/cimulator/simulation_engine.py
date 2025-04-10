@@ -54,15 +54,36 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     for job_name, job in expanded_jobs.items():
         logger.debug(f"Processing job '{job_name}': {job}")
 
-        # First, expand variables in the job's variables section
+        # Get the job's variables section
         job_variables = job.get("variables", {})
-        expanded_job_variables = expand_variables(job_variables, simulation_variables)
 
-        # Create a copy of the job with expanded variables
+        # Create a copy of the simulation variables for this job
+        job_simulation_variables = simulation_variables.copy()
+
+        # Expand variables in multiple passes to handle nested references
+        # First pass: expand using global variables
+        expanded_job_variables = expand_variables(job_variables, job_simulation_variables)
+
+        # Create a temporary variables dictionary that includes both global and job variables
+        temp_variables = job_simulation_variables.copy()
+        temp_variables.update(expanded_job_variables)
+
+        # Second pass: expand again using the combined variables
+        # This handles one level of nesting (e.g., $VAR1 in $VAR2)
+        expanded_job_variables = expand_variables(job_variables, temp_variables)
+
+        # Update the temporary variables with the new expanded values
+        temp_variables = job_simulation_variables.copy()
+        temp_variables.update(expanded_job_variables)
+
+        # Third pass: expand once more to handle deeper nesting (e.g., $VAR2 in $VAR3)
+        expanded_job_variables = expand_variables(job_variables, temp_variables)
+
+        # Create a copy of the job with the fully expanded variables
         job_with_expanded_variables = job.copy()
         job_with_expanded_variables["variables"] = expanded_job_variables
 
-        # Update the simulation variables with the expanded job variables
+        # Update the job's simulation variables with the fully expanded job variables
         job_simulation_variables = simulation_variables.copy()
         job_simulation_variables.update(expanded_job_variables)
 
@@ -83,8 +104,8 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
         simulation_jobs[job_name] = expanded_job
         logger.debug(f"Final expanded job '{job_name}': {expanded_job}")
 
-        # Update the global simulation variables with the job's variables
-        simulation_variables.update(job_simulation_variables)
+        # We don't update the global simulation variables with job-specific variables
+        # to maintain proper variable scoping between jobs
 
     # Create a list of job names that will run (excluding template jobs that start with a dot)
     jobs_list = [job_name for job_name in simulation_jobs.keys() if not job_name.startswith('.')]
