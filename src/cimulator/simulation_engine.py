@@ -51,7 +51,12 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     expanded_jobs = expand_all_jobs(all_jobs)
     simulation_jobs = {}
 
-    for job_name, job in expanded_jobs.items():
+    # Process jobs in a deterministic order to ensure dependencies are handled correctly
+    # Sort job names to ensure consistent processing order
+    sorted_job_names = sorted(expanded_jobs.keys())
+    
+    for job_name in sorted_job_names:
+        job = expanded_jobs[job_name]
         logger.debug(f"Processing job '{job_name}': {job}")
 
         # Get the job's variables section
@@ -63,19 +68,14 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
         # Expand variables in multiple passes to handle nested references
         # First pass: expand using global variables
         expanded_job_variables = expand_variables(job_variables, job_simulation_variables)
-
         # Create a temporary variables dictionary that includes both global and job variables
         temp_variables = job_simulation_variables.copy()
         temp_variables.update(expanded_job_variables)
-
         # Second pass: expand again using the combined variables
-        # This handles one level of nesting (e.g., $VAR1 in $VAR2)
         expanded_job_variables = expand_variables(job_variables, temp_variables)
-
         # Update the temporary variables with the new expanded values
         temp_variables = job_simulation_variables.copy()
         temp_variables.update(expanded_job_variables)
-
         # Third pass: expand once more to handle deeper nesting (e.g., $VAR2 in $VAR3)
         expanded_job_variables = expand_variables(job_variables, temp_variables)
 
@@ -91,7 +91,12 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
         job_rules = job.get("rules")
         if job_rules:
             # Use the job's expanded variables when evaluating the job's rules
-            should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables)
+            # First, ensure job variables are properly expanded for rule evaluation
+            job_simulation_variables_for_rules = job_simulation_variables.copy()
+            job_simulation_variables_for_rules.update(expanded_job_variables)
+            
+            should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables_for_rules)
+            
             logger.debug(f"Job '{job_name}' rules evaluation: should_run={should_run}, triggered_condition={triggered_condition}, variables={job_vars}")
             if not should_run:
                 logger.debug(f"Job '{job_name}' will be skipped based on its rules.")

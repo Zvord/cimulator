@@ -24,18 +24,21 @@ def expand_job(job_name, all_jobs, cache=None, visited=None):
         visited = set()
 
     if job_name in cache:
-        return cache[job_name]
+        # Return a deep copy to avoid sharing references between jobs
+        import copy
+        return copy.deepcopy(cache[job_name])
 
     if job_name in visited:
         raise Exception(f"Circular dependency detected for job: {job_name}")
 
     visited.add(job_name)
 
-    # Make a shallow copy to avoid modifying the original job.
+    # Make a deep copy to avoid modifying the original job.
+    import copy
     job_def = all_jobs[job_name]
     if not isinstance(job_def, dict):
         raise Exception(f"Job definition for '{job_name}' is not a dictionary: {type(job_def).__name__}")
-    job = job_def.copy()
+    job = copy.deepcopy(job_def)
 
     # If there is no "extends", the job is already fully defined.
     if 'extends' not in job:
@@ -56,7 +59,7 @@ def expand_job(job_name, all_jobs, cache=None, visited=None):
         # Recursively expand parent job
         parent_expanded = expand_job(parent_name, all_jobs, cache, visited)
         # Merge parent's values into the accumulating parent configuration.
-        merged_parent = merge_dicts(merged_parent, parent_expanded.copy())
+        merged_parent = merge_dicts(merged_parent, copy.deepcopy(parent_expanded))
 
     # Merge the current job over the merged parent's values.
     merged = merge_dicts(merged_parent, job)
