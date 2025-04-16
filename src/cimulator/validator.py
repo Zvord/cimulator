@@ -83,9 +83,12 @@ def validate_job_needs_dependencies(simulation_jobs, running_jobs):
 
             for needed_job in needs_field:
                 # Handle both simple format (string) and complex format (dict with 'job' key)
+                is_optional = False
                 if isinstance(needed_job, dict):
                     if 'job' in needed_job:
                         needed_job_name = needed_job['job']
+                        # Check if this is an optional need
+                        is_optional = needed_job.get('optional', False)
                     else:
                         # Skip if the dictionary doesn't have a 'job' key
                         continue
@@ -93,6 +96,10 @@ def validate_job_needs_dependencies(simulation_jobs, running_jobs):
                     needed_job_name = needed_job
 
                 if needed_job_name not in running_jobs:
-                    dependency_errors.append(f"Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline")
+                    # Add [Optional] prefix for optional needs
+                    if is_optional:
+                        dependency_errors.append(f"[Optional] Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline")
+                    else:
+                        dependency_errors.append(f"Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline")
 
     return dependency_errors

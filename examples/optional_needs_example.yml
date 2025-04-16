@@ -1,0 +1,60 @@
+# Example GitLab CI configuration with optional needs
+stages:
+  - build
+  - lint
+  - test
+
+# Build jobs
+Simulator A build:
+  stage: build
+  script:
+    - echo "Building with Simulator A"
+  rules:
+    - if: $RUN_SIM_A == "1"
+
+Simulator B build:
+  stage: build
+  script:
+    - echo "Building with Simulator B"
+  rules:
+    - if: $RUN_SIM_B == "1"
+
+Simulator C build:
+  stage: build
+  script:
+    - echo "Building with Simulator C"
+  rules:
+    - if: $RUN_SIM_C == "1"
+
+Simulator D build:
+  stage: build
+  script:
+    - echo "Building with Simulator D"
+  rules:
+    - if: $RUN_SIM_D == "1"
+
+# Check warnings job with mixed optional and required needs
+Check warnings:
+  interruptible: false
+  stage: lint
+  tags: [large_node]
+  rules:
+    - if: $RUN_CHECK_WARNINGS == "1"
+  needs:
+    - job: Simulator A build
+      optional: true
+    - job: Simulator B build  # Required need (no optional flag)
+    - job: Simulator C build
+      optional: true
+    - job: Simulator D build
+      optional: true
+  script:
+    - echo "Checking warnings from build jobs"
+    - echo "Generating warning reports"
+  artifacts:
+    when: always
+    reports:
+      codequality: global_warnings.json
+    paths:
+      - global_warnings.json
+      - warnings_metrics.json

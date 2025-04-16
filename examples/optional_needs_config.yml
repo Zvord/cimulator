@@ -1,0 +1,24 @@
+# Simulation configuration for optional needs example
+default:
+  # Only run the Check warnings job and Simulator B build
+  RUN_CHECK_WARNINGS: "1"
+  RUN_SIM_B: "1"
+  RUN_SIM_A: "0"
+  RUN_SIM_C: "0"
+  RUN_SIM_D: "0"
+
+all_builds:
+  # Run all build jobs and the Check warnings job
+  RUN_CHECK_WARNINGS: "1"
+  RUN_SIM_B: "1"
+  RUN_SIM_A: "1"
+  RUN_SIM_C: "1"
+  RUN_SIM_D: "1"
+
+no_builds:
+  # Only run the Check warnings job, no build jobs
+  RUN_CHECK_WARNINGS: "1"
+  RUN_SIM_B: "0"
+  RUN_SIM_A: "0"
+  RUN_SIM_C: "0"
+  RUN_SIM_D: "0"
