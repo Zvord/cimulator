@@ -1,7 +1,7 @@
-import unittest
+import pytest
 from cimulator.validator import validate_job_dependencies, validate_job_needs_dependencies
 
-class TestValidator(unittest.TestCase):
+class TestValidator:
     def test_validate_job_dependencies_extends(self):
         """Test validation of extends dependencies."""
         # Test case: job extends a non-existing job
@@ -10,10 +10,10 @@ class TestValidator(unittest.TestCase):
             "job2": {"extends": "non-existing-job", "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("extends non-existing job", errors[0])
-        self.assertIn("job2", errors[0])
-        self.assertIn("non-existing-job", errors[0])
+        assert len(errors) == 1
+        assert "extends non-existing job" in errors[0]
+        assert "job2" in errors[0]
+        assert "non-existing-job" in errors[0]
 
         # Test case: job extends an existing job
         jobs = {
@@ -21,7 +21,7 @@ class TestValidator(unittest.TestCase):
             "job2": {"extends": "job1", "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
         # Test case: job extends multiple jobs, one of which doesn't exist
         jobs = {
@@ -29,10 +29,10 @@ class TestValidator(unittest.TestCase):
             "job2": {"extends": ["job1", "non-existing-job"], "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("extends non-existing job", errors[0])
-        self.assertIn("job2", errors[0])
-        self.assertIn("non-existing-job", errors[0])
+        assert len(errors) == 1
+        assert "extends non-existing job" in errors[0]
+        assert "job2" in errors[0]
+        assert "non-existing-job" in errors[0]
 
     def test_validate_job_dependencies_needs(self):
         """Test validation of needs dependencies."""
@@ -42,10 +42,10 @@ class TestValidator(unittest.TestCase):
             "job2": {"needs": "non-existing-job", "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs non-existing job", errors[0])
-        self.assertIn("job2", errors[0])
-        self.assertIn("non-existing-job", errors[0])
+        assert len(errors) == 1
+        assert "needs non-existing job" in errors[0]
+        assert "job2" in errors[0]
+        assert "non-existing-job" in errors[0]
 
         # Test case: job needs an existing job
         jobs = {
@@ -53,7 +53,7 @@ class TestValidator(unittest.TestCase):
             "job2": {"needs": "job1", "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
         # Test case: job needs multiple jobs, one of which doesn't exist
         jobs = {
@@ -61,10 +61,10 @@ class TestValidator(unittest.TestCase):
             "job2": {"needs": ["job1", "non-existing-job"], "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs non-existing job", errors[0])
-        self.assertIn("job2", errors[0])
-        self.assertIn("non-existing-job", errors[0])
+        assert len(errors) == 1
+        assert "needs non-existing job" in errors[0]
+        assert "job2" in errors[0]
+        assert "non-existing-job" in errors[0]
 
         # Test case: job needs with complex format (dict with 'job' key)
         jobs = {
@@ -72,10 +72,10 @@ class TestValidator(unittest.TestCase):
             "job2": {"needs": [{"job": "job1", "artifacts": True}, {"job": "non-existing-job", "artifacts": False}], "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs non-existing job", errors[0])
-        self.assertIn("job2", errors[0])
-        self.assertIn("non-existing-job", errors[0])
+        assert len(errors) == 1
+        assert "needs non-existing job" in errors[0]
+        assert "job2" in errors[0]
+        assert "non-existing-job" in errors[0]
 
         # Test case: job needs with complex format, all jobs exist
         jobs = {
@@ -84,7 +84,7 @@ class TestValidator(unittest.TestCase):
             "job3": {"needs": [{"job": "job1", "artifacts": True}, {"job": "job2", "artifacts": False}], "script": "echo 'World'"}
         }
         errors = validate_job_dependencies(jobs)
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
     def test_validate_job_needs_dependencies(self):
         """Test validation of needs dependencies for running jobs."""
@@ -97,14 +97,14 @@ class TestValidator(unittest.TestCase):
         }
         running_jobs = {"job1", "job2", "job3"}  # job4 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs job 'job4' which will not run", errors[0])
-        self.assertIn("job3", errors[0])
+        assert len(errors) == 1
+        assert "needs job 'job4' which will not run" in errors[0]
+        assert "job3" in errors[0]
 
         # Test case: all needed jobs are running
         running_jobs = {"job1", "job2", "job3", "job4"}  # all jobs are running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
         # Test case: job with multiple needs, some of which won't run
         simulation_jobs = {
@@ -114,9 +114,9 @@ class TestValidator(unittest.TestCase):
         }
         running_jobs = {"job1", "job2"}  # job3 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs job 'job3' which will not run", errors[0])
-        self.assertIn("job2", errors[0])
+        assert len(errors) == 1
+        assert "needs job 'job3' which will not run" in errors[0]
+        assert "job2" in errors[0]
 
         # Test case: job with complex needs format, some jobs won't run
         simulation_jobs = {
@@ -126,9 +126,9 @@ class TestValidator(unittest.TestCase):
         }
         running_jobs = {"job1", "job2"}  # job3 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs job 'job3' which will not run", errors[0])
-        self.assertIn("job2", errors[0])
+        assert len(errors) == 1
+        assert "needs job 'job3' which will not run" in errors[0]
+        assert "job2" in errors[0]
 
         # Test case: job with complex needs format, all needed jobs are running
         simulation_jobs = {
@@ -138,7 +138,7 @@ class TestValidator(unittest.TestCase):
         }
         running_jobs = {"job1", "job2", "job3"}  # all jobs are running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
     def test_template_jobs_validation(self):
         """Test that template jobs (starting with a dot) are not validated for dependencies."""
@@ -149,7 +149,7 @@ class TestValidator(unittest.TestCase):
         }
         errors = validate_job_dependencies(jobs)
         # Should not report an error for template job
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
         # Test case: template job needs a non-existing job
         jobs = {
@@ -158,7 +158,7 @@ class TestValidator(unittest.TestCase):
         }
         errors = validate_job_dependencies(jobs)
         # Should not report an error for template job
-        self.assertEqual(len(errors), 0)
+        assert len(errors) == 0
 
         # Test case: regular job needs a template job
         jobs = {
@@ -167,10 +167,10 @@ class TestValidator(unittest.TestCase):
         }
         errors = validate_job_dependencies(jobs)
         # Should report an error because template jobs won't run
-        self.assertEqual(len(errors), 1)
-        self.assertIn("needs non-existing job", errors[0])
-        self.assertIn("job1", errors[0])
-        self.assertIn(".template_job", errors[0])
+        assert len(errors) == 1
+        assert "needs non-existing job" in errors[0]
+        assert "job1" in errors[0]
+        assert ".template_job" in errors[0]
 
         # Test case: template job needs another template job
         jobs = {
@@ -179,7 +179,4 @@ class TestValidator(unittest.TestCase):
         }
         errors = validate_job_dependencies(jobs)
         # Should not report an error for template jobs
-        self.assertEqual(len(errors), 0)
-
-if __name__ == '__main__':
-    unittest.main()
+        assert len(errors) == 0
