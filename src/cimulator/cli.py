@@ -126,12 +126,20 @@ def main():
 
             # Get the workflow configuration (if any).
             workflow_config = ci_config.get("workflow", {})
+            
+            # Get global variables from the GitLab CI file
+            gitlab_vars = ci_config.get("variables", {})
+            
             # Load simulation configuration (global variables etc.)
             sim_config = load_simulation_config(args.simulation_config)
             # Get the variables from the specified profile
             if args.profile not in sim_config:
                 raise ValueError(f"'{args.profile}' is not a valid key in the simulation configuration file. Expected keys: {list(sim_config.keys())}")
-            global_vars = sim_config.get(args.profile, {})
+            profile_vars = sim_config.get(args.profile, {})
+            
+            # Merge GitLab CI variables with profile variables
+            # Profile variables take precedence over GitLab CI variables
+            global_vars = {**gitlab_vars, **profile_vars}
 
             # Run the simulation.
             simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
