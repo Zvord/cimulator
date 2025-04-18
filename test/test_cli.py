@@ -1,5 +1,7 @@
 import tempfile
 import os
+import yaml
+import pytest
 from cimulator.cli import main
 
 def create_temp_file(contents):
@@ -28,35 +30,43 @@ job1:
     finally:
         os.remove(ci_file)
 
-def test_simulate_cli(monkeypatch, capsys):
+def test_simulate_cli_with_profile(monkeypatch, capsys):
     # Create a simple .gitlab-ci file with a workflow and one job.
     ci_content = """
 workflow:
   rules:
-    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
       when: always
       variables:
-        PIPELINE: "push_pipeline"
+        PIPELINE: "scheduled_pipeline"
 job1:
-  script: "echo $MESSAGE"
+  script: "echo $STATUS"
 """
     ci_file = create_temp_file(ci_content)
 
-    # Create a simulation configuration file.
+    # Create a simulation configuration file with profiles.
+    # This is your provided example.
     sim_content = """
-simulation:
-  variables:
-    CI_PIPELINE_SOURCE: "push"
-    MESSAGE: "Hello from simulation"
+Nightly-Main:
+  CI_PIPELINE_SOURCE: "schedule"
+  RUN_NIGHTLY_CUSTOMER_BRANCH: "1"
+
+MR-Push-Frozen:
+  CI_PIPELINE_SOURCE: "merge_request_event"
+  CI_MERGE_REQUEST_EVENT_TYPE: ""
+  CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "master"
 """
     sim_file = create_temp_file(sim_content)
 
-    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", ci_file, sim_file])
+    # Simulate command-line arguments for the 'simulate' subcommand.
+    # The new CLI expects an additional profile argument, e.g., "Nightly-Main".
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", ci_file, sim_file, "Nightly-Main"])
     try:
         main()
         captured = capsys.readouterr().out
-        assert "Pipeline Simulation Summary" in captured
-        assert "Hello from simulation" in captured
+        # We expect that the simulation summary reflects the global variables from the "Nightly-Main" profile.
+        # For instance, RUN_NIGHTLY_CUSTOMER_BRANCH should be set to "1".
+        assert "RUN_NIGHTLY_CUSTOMER_BRANCH: '1'" in captured or 'RUN_NIGHTLY_CUSTOMER_BRANCH: "1"' in captured
     finally:
         os.remove(ci_file)
         os.remove(sim_file)
