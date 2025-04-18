@@ -79,13 +79,14 @@ deploy:
 You can validate and simulate this pipeline:
 
 ```bash
-cimulator simulate .gitlab-ci.yml --branch feature
+cimulator simulate examples/complete/.gitlab-ci.yml examples/complete/ci-config.yml MR
+Root file: /Users/ibarkov/workspace/cimulator/examples/complete/.gitlab-ci.yml
+Base path: /Users/ibarkov/workspace/cimulator/examples/complete
 
-# Output might show:
-# Jobs that would run:
-# - build
-# - test
-# (deploy would not run because branch is not "main")
+Warnings about job dependencies:
+  - Job 'integration_test' needs job 'test_windows' which will not run in this pipeline
+  - [Optional] Job 'test_mixed' needs job 'build_optnotrun' which will not run in this pipeline
+Simulation successful. Output saved to /Users/ibarkov/workspace/cimulator/simulation_output.yml
 ```
 
 ## License

@@ -1,0 +1,5 @@
+MR:
+  CI_PIPELINE_SOURCE: "merge_request"
+
+Main:
+  CI_COMMIT_BRANCH: "main"

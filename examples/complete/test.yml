@@ -1,0 +1,90 @@
+# Test configuration file
+
+# Test templates
+.test_template:
+  stage: test
+  image: ${TEST_IMAGE}
+  variables:
+    TEST_LEVEL: "basic"
+  script:
+    - echo "Running test template"
+
+# Test jobs that depend on build jobs
+test_linux:
+  extends: .test_template
+  script:
+    - echo "Testing Linux build"
+    - echo "Test level: ${TEST_LEVEL}"
+    - echo "Using build artifact from: .build/linux_build.log"
+    - cat .build/linux_build.log
+  needs:
+    - job: build_linux
+  rules:
+    - if: $BUILD_LINUX == "true" || $BUILD_ALL == "true"
+
+test_macos:
+  extends: .test_template
+  script:
+    - echo "Testing macOS build"
+    - echo "Test level: ${TEST_LEVEL}"
+    - echo "Using build artifact from: .build/macos_build.log"
+    - cat .build/macos_build.log
+  needs:
+    - job: build_macos
+  rules:
+    - if: $BUILD_MACOS == "true" || $BUILD_ALL == "true"
+
+test_windows:
+  extends: .test_template
+  script:
+    - echo "Testing Windows build"
+    - echo "Test level: ${TEST_LEVEL}"
+    - echo "Using build artifact from: .build/windows_build.log"
+    - cat .build/windows_build.log
+  needs:
+    - job: build_windows
+  rules:
+    - if: $BUILD_WINDOWS == "true" # Ommitted BUILD_ALL
+
+# Test job with a need that is absent (will not run)
+test_missing:
+  extends: .test_template
+  script:
+    - echo "This job should not run because its needs are not satisfied"
+  needs:
+    - job: build_nonexistent
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
+# Test job with mixed needs (one present, one optional and absent)
+test_mixed:
+  extends: .test_template
+  script:
+    - echo "Testing with mixed needs"
+    - echo "This job should run even though one need is missing"
+    - cat .build/linux_build.log
+  needs:
+    - job: build_linux  # Present need
+    - job: build_optnotrun  # Absent need
+      optional: true   # But it's optional
+  rules:
+    - if: $BUILD_LINUX == "true" || $BUILD_ALL == "true"
+
+# Integration test job
+integration_test:
+  extends: .test_template
+  variables:
+    TEST_LEVEL: "integration"
+  script:
+    - echo "Running integration tests"
+    - echo "Test level: ${TEST_LEVEL}"
+    - cat .build/linux_build.log
+    - cat .build/macos_build.log
+    - cat .build/windows_build.log
+  needs:
+    - job: test_linux
+    - job: test_macos
+    - job: test_windows
+  rules:
+    - if: $BUILD_ALL == "true"
+  when: manual

@@ -1,0 +1,88 @@
+# Build configuration file
+
+# Job templates
+.build_template:
+  stage: build
+  script:
+    - echo "Running build template"
+  variables:
+    BUILD_TYPE: "default"
+  cache:
+    key: ${CI_COMMIT_REF_SLUG}
+    paths:
+      - .build/
+
+.build_with_deps:
+  extends: .build_template
+  before_script:
+    - echo "Installing dependencies"
+    - apt-get update -y
+    - apt-get install -y build-essential
+
+# Setup job
+setup:
+  stage: setup
+  script:
+    - echo "Setting up environment"
+    - mkdir -p .build
+  artifacts:
+    paths:
+      - .build/
+
+# Build jobs
+build_linux:
+  extends: .build_with_deps
+  variables:
+    BUILD_TYPE: "release"
+    PLATFORM: "linux"
+  script:
+    - echo "Building for Linux"
+    - echo "Build type: ${BUILD_TYPE}"
+    - echo "Platform: ${PLATFORM}"
+    - echo "Global var: ${GLOBAL_VAR}"
+    - echo "Build output" > .build/linux_build.log
+  rules:
+    - if: $BUILD_LINUX == "true" || $BUILD_ALL == "true"
+  artifacts:
+    paths:
+      - .build/linux_build.log
+
+build_macos:
+  extends: .build_template
+  variables:
+    BUILD_TYPE: "release"
+    PLATFORM: "macos"
+  script:
+    - echo "Building for macOS"
+    - echo "Build type: ${BUILD_TYPE}"
+    - echo "Platform: ${PLATFORM}"
+    - echo "Global var: ${GLOBAL_VAR}"
+    - echo "Build output" > .build/macos_build.log
+  rules:
+    - if: $BUILD_MACOS == "true" || $BUILD_ALL == "true"
+  artifacts:
+    paths:
+      - .build/macos_build.log
+
+build_windows:
+  extends: .build_with_deps
+  variables:
+    BUILD_TYPE: "release"
+    PLATFORM: "windows"
+  script:
+    - echo "Building for Windows"
+    - echo "Build type: ${BUILD_TYPE}"
+    - echo "Platform: ${PLATFORM}"
+    - echo "Global var: ${GLOBAL_VAR}"
+    - echo "Build output" > .build/windows_build.log
+  rules:
+    - if: $BUILD_WINDOWS == "true" || $BUILD_ALL == "true"
+  artifacts:
+    paths:
+      - .build/windows_build.log
+
+build_optnotrun:
+  rules:
+    - if: $BUILD_MACOS == "true"
+  script:
+    - echo "This job is created to be run at improper time"
