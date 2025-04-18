@@ -8,12 +8,18 @@ Cimulator is a Python tool designed to validate and simulate GitLab CI pipelines
 
 ### Features
 
-- **Configuration Validation**: Validates GitLab CI YAML files for syntax and structural errors
+- **Configuration Validation**: Validates GitLab CI YAML files for non-existent jobs
 - **Include Resolution**: Recursively processes all included YAML files
 - **Job Expansion**: Properly expands jobs according to the `extends` mechanism
 - **Rule Evaluation**: Evaluates workflow and job rules to determine which jobs would run
 - **Variable Interpolation**: Simulates how variables are expanded in different contexts
 - **Pipeline Simulation**: Provides a "dry run" of what a pipeline would look like
+
+### Limitations
+
+- YAML correctness check is pretty basic: `cimulator` checks only for the references jobs that don't exist. YAML syntax correctness shall be done using the proper tools.
+- It's design to be 100% offline. It means the references to the files and jobs from other repositories are not resolved. They don't prevent `cimulator` from running, though.
+- In some cases you can still see incorrect variable expansion in the simulation output file. This is WIP.
 
 ## Installation
 
@@ -29,52 +35,25 @@ poetry add cimulator
 
 ## Basic Usage
 
+There are to commands: `validate` and `simulate`. Validation checks that all jobs references in `needs` and `extends` exist. Simulation is a more in-depth action, that considers the variables that the pipeline will be run upon, including the built-in Gitlab CI variables, resolves the rules and produces an output simulations file that contains:
+
+- List of jobs that will be run
+- Jobs seen as by Gitlab, i.e. with resolved extensions and variables.
+
 ```bash
 # Validate a CI configuration file
 cimulator validate path/to/your/.gitlab-ci.yml
 
 # Simulate a pipeline run for the default branch
-cimulator simulate path/to/your/.gitlab-ci.yml
-
-# Simulate a pipeline run for a specific event (merge request)
-cimulator simulate path/to/your/.gitlab-ci.yml --event merge_request
-
-# Get detailed output
-cimulator simulate path/to/your/.gitlab-ci.yml --verbose
+cimulator simulate path/to/your/.gitlab-ci.yml ci-config.yml profile
 ```
+
+To simulate you will need a CI config file, which contains profiles for your CI. Typically you need to specify
+there the source of the pipeline and additional variables that you set in Gitlab CI.
 
 ## Example
 
-Given a GitLab CI configuration:
-
-```yaml
-# .gitlab-ci.yml
-stages:
-  - build
-  - test
-  - deploy
-
-build:
-  stage: build
-  script: echo "Building..."
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-      when: never
-    - when: always
-
-test:
-  stage: test
-  script: echo "Testing..."
-  needs: [build]
-
-deploy:
-  stage: deploy
-  script: echo "Deploying..."
-  needs: [test]
-  rules:
-    - if: $CI_COMMIT_BRANCH == "main"
-      when: on_success
-```
+Consider the example CI in `examples/complete`.
 
 You can validate and simulate this pipeline:
 
