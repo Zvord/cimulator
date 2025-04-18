@@ -54,7 +54,7 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     # Process jobs in a deterministic order to ensure dependencies are handled correctly
     # Sort job names to ensure consistent processing order
     sorted_job_names = sorted(expanded_jobs.keys())
-    
+
     for job_name in sorted_job_names:
         job = expanded_jobs[job_name]
         logger.debug(f"Processing job '{job_name}': {job}")
@@ -94,9 +94,9 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
             # First, ensure job variables are properly expanded for rule evaluation
             job_simulation_variables_for_rules = job_simulation_variables.copy()
             job_simulation_variables_for_rules.update(expanded_job_variables)
-            
+
             should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables_for_rules)
-            
+
             logger.debug(f"Job '{job_name}' rules evaluation: should_run={should_run}, triggered_condition={triggered_condition}, variables={job_vars}")
             if not should_run:
                 logger.debug(f"Job '{job_name}' will be skipped based on its rules.")
@@ -123,7 +123,35 @@ def simulate_pipeline(all_jobs, workflow_config, global_variables):
     dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
 
     # Include all expanded jobs (including template jobs) for debugging
-    all_expanded_jobs = {job_name: expand_variables(job, simulation_variables) for job_name, job in expanded_jobs.items()}
+    # TODO rewrite this AI garbage
+    all_expanded_jobs = {}
+    # Process each job by properly expanding variables using both global and job-specific variables
+    for job_name, job in expanded_jobs.items():
+        # Get the job's variables section
+        job_variables = job.get("variables", {})
+
+        # Create a copy of the simulation variables for this job
+        job_simulation_variables = simulation_variables.copy()
+
+        # Expand variables in multiple passes to handle nested references
+        # First pass: expand using global variables
+        expanded_job_variables = expand_variables(job_variables, job_simulation_variables)
+        # Create a temporary variables dictionary that includes both global and job variables
+        temp_variables = job_simulation_variables.copy()
+        temp_variables.update(expanded_job_variables)
+        # Second pass: expand again using the combined variables
+        expanded_job_variables = expand_variables(job_variables, temp_variables)
+        # Update the temporary variables with the new expanded values
+        temp_variables = job_simulation_variables.copy()
+        temp_variables.update(expanded_job_variables)
+        # Third pass: expand once more to handle deeper nesting
+        expanded_job_variables = expand_variables(job_variables, temp_variables)
+
+        # Merge the expanded job variables into the simulation variables for this job
+        job_simulation_variables.update(expanded_job_variables)
+
+        # Apply the full variable expansion to the job
+        all_expanded_jobs[job_name] = expand_variables(job.copy(), job_simulation_variables)
 
     simulation_summary = {
         "workflow_run": wf_run,
