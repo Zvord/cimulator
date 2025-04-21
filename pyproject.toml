@@ -4,12 +4,12 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "cimulator"
-version = "0.1.0"
+version = "0.1.1"
 description = "A tool to validate and simulate GitLab CI pipelines"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Ilya Barkov", email = "ilya.barkov@example.com"}
+    {name = "Ilia Barkov", email = "barkovian@gmail.com"}
 ]
 keywords = ["gitlab", "ci", "pipeline", "simulation", "validation"]
 classifiers = [
@@ -36,11 +36,10 @@ dependencies = [
 cimulator = "cimulator.cli:main"
 
 [project.urls]
-Repository = "https://github.com/ibarkov/cimulator"
+Repository = "https://github.com/Zvord/cimulator"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.3.5"
 
-# This ensures poetry knows where to find the package
-[tool.poetry]
-packages = [{ include = "cimulator", from = "src" }]
+[tool.hatch.build.targets.wheel]
+packages = ["src/cimulator"]
