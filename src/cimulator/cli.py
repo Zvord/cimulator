@@ -9,7 +9,7 @@ from cimulator.loader import load_and_resolve
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
 from cimulator.config import load_simulation_config
-from cimulator.validator import validate_job_dependencies
+from cimulator.validator import validate_job_dependencies, detect_duplicate_jobs
 
 def setup_logging(level):
     """
@@ -88,7 +88,7 @@ def main():
 
     if args.command == "validate":
         try:
-            config = load_and_resolve(args.ci_file)
+            config, job_sources = load_and_resolve(args.ci_file)
 
             # Extract jobs from the configuration
             reserved_keys = {"include", "workflow", "variables", "stages"}
@@ -97,11 +97,20 @@ def main():
             # Validate job dependencies
             validation_errors = validate_job_dependencies(jobs)
 
+            # Check for duplicate jobs
+            duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
+
             if validation_errors:
                 print("Validation failed with the following errors:", file=sys.stderr)
                 for error in validation_errors:
                     print(f"  - {error}", file=sys.stderr)
                 sys.exit(1)
+
+            # Display warnings about duplicate jobs
+            if duplicate_warnings:
+                print("\nWarnings about duplicate jobs:", file=sys.stderr)
+                for warning in duplicate_warnings:
+                    print(f"  - {warning}", file=sys.stderr)
 
             # Save the output to a file instead of printing it
             with open(args.output, 'w') as f:
@@ -117,26 +126,29 @@ def main():
     elif args.command == "simulate":
         try:
             # Load the GitLab CI configuration.
-            ci_config = load_and_resolve(args.ci_file)
+            ci_config, job_sources = load_and_resolve(args.ci_file)
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
             # Also filter out non-dictionary values as they can't be valid jobs
             reserved_keys = {"include", "workflow", "variables", "stages"}
             jobs = {k: v for k, v in ci_config.items() if k not in reserved_keys and isinstance(v, dict)}
 
+            # Check for duplicate jobs
+            duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
+
             # Get the workflow configuration (if any).
             workflow_config = ci_config.get("workflow", {})
-            
+
             # Get global variables from the GitLab CI file
             gitlab_vars = ci_config.get("variables", {})
-            
+
             # Load simulation configuration (global variables etc.)
             sim_config = load_simulation_config(args.simulation_config)
             # Get the variables from the specified profile
             if args.profile not in sim_config:
                 raise ValueError(f"'{args.profile}' is not a valid key in the simulation configuration file. Expected keys: {list(sim_config.keys())}")
             profile_vars = sim_config.get(args.profile, {})
-            
+
             # Merge GitLab CI variables with profile variables
             # Profile variables take precedence over GitLab CI variables
             global_vars = {**gitlab_vars, **profile_vars}
@@ -195,6 +207,12 @@ def main():
                 print("\nWarnings about job dependencies:", file=sys.stderr)
                 for error in simulation_summary["dependency_errors"]:
                     print(f"  - {error}", file=sys.stderr)
+
+            # Display warnings about duplicate jobs
+            if duplicate_warnings:
+                print("\nWarnings about duplicate jobs:", file=sys.stderr)
+                for warning in duplicate_warnings:
+                    print(f"  - {warning}", file=sys.stderr)
 
             print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
         except Exception as e:

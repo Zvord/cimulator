@@ -1,0 +1,13 @@
+# file2.yml - Second included file
+
+# This job is unique to file2.yml
+file2_unique_job:
+  stage: test
+  script:
+    - echo "This is a unique job in file2.yml"
+
+# This is a template job, also duplicated in the root file
+.template_job:
+  stage: build
+  script:
+    - echo "This is a template job in file2.yml"

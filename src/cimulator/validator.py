@@ -5,6 +5,65 @@ This module provides functions to validate GitLab CI configurations,
 focusing on job dependencies and relationships.
 """
 
+import logging
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
+
+def detect_duplicate_jobs(all_jobs, job_sources=None):
+    """
+    Detect duplicate job names in the configuration.
+
+    Parameters:
+        all_jobs (dict): Dictionary of job definitions.
+        job_sources (dict, optional): Mapping of job names to their source files.
+                                     Used to provide more detailed warnings.
+
+    Returns:
+        list: List of warnings about duplicate jobs.
+    """
+    logger.debug(f"Detecting duplicate jobs among {len(all_jobs)} jobs")
+    logger.debug(f"Job sources: {job_sources}")
+
+    duplicate_warnings = []
+    seen_jobs = {}
+
+    # Check for duplicates by processing job sources
+    if job_sources:
+        # Find duplicate jobs by looking for jobs with duplicate sources
+        for job_name, _ in all_jobs.items():
+            # Check if this job has duplicates entry in job_sources
+            duplicate_key = f"{job_name}__duplicates"
+            if duplicate_key in job_sources:
+                # Get original source and duplicate sources
+                original_source = job_sources[job_name]
+                duplicate_sources = job_sources[duplicate_key]
+
+                # Filter out duplicate sources that match the original source
+                # This prevents false positives when a job is defined only once
+                # but appears in duplicates due to how the loader processes the file
+                unique_duplicate_sources = [src for src in duplicate_sources if src != original_source]
+
+                # Only report as duplicate if there are sources different from the original
+                if unique_duplicate_sources:
+                    logger.debug(f"Found duplicates for {job_name} via job_sources")
+
+                    # Create warning message
+                    warning = f"Duplicate job '{job_name}' found (defined in: {original_source}, also defined in: {', '.join(unique_duplicate_sources)})."
+                    logger.debug(f"Adding warning: {warning}")
+                    duplicate_warnings.append(warning)
+    else:
+        # If no job_sources available, fall back to simple duplicate detection
+        for job_name in all_jobs:
+            if job_name in seen_jobs:
+                warning = f"Duplicate job '{job_name}' found."
+                duplicate_warnings.append(warning)
+            else:
+                seen_jobs[job_name] = True
+
+    logger.debug(f"Found {len(duplicate_warnings)} duplicate warnings")
+    return duplicate_warnings
+
 def validate_job_dependencies(all_jobs):
     """
     Validate job dependencies (extends and needs).

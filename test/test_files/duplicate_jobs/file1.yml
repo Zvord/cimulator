@@ -1,0 +1,13 @@
+# file1.yml - First included file
+
+# This job is duplicated in the root file
+duplicate_job:
+  stage: test
+  script:
+    - echo "This is a duplicate job in file1.yml"
+
+# This job is unique to file1.yml
+file1_unique_job:
+  stage: build
+  script:
+    - echo "This is a unique job in file1.yml"

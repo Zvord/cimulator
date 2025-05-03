@@ -1,0 +1,25 @@
+# Root GitLab CI configuration file
+# This file includes both file1.yml and file2.yml
+
+# Include other configuration files
+include:
+  - 'file1.yml'
+  - 'file2.yml'
+
+# This job is duplicated in file1.yml
+duplicate_job:
+  stage: test
+  script:
+    - echo "This is a duplicate job in the root file"
+
+# This job is unique to the root file
+root_unique_job:
+  stage: deploy
+  script:
+    - echo "This is a unique job in the root file"
+
+# This is a template job, also duplicated in file2.yml
+.template_job:
+  stage: build
+  script:
+    - echo "This is a template job in the root file"

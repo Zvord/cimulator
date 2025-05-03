@@ -49,7 +49,7 @@ def test_resolve_includes_single():
             yaml.dump(main_content, f)
 
         # Load and resolve includes.
-        result = load_and_resolve(main_file)
+        result, _ = load_and_resolve(main_file)
         expected = {"main_key": "main_value", "child_key": "child_value"}
         assert result == expected
 
@@ -75,7 +75,7 @@ def test_resolve_includes_recursive():
             yaml.dump(main_content, f)
 
         # Load and resolve includes.
-        result = load_and_resolve(main_file)
+        result, _ = load_and_resolve(main_file)
         expected = {
             "main_key": "main_value",
             "child_key": "child_value",
@@ -99,6 +99,6 @@ def test_include_as_dict():
         with open(main_file, "w") as f:
             yaml.dump(main_content, f)
 
-        result = load_and_resolve(main_file)
+        result, _ = load_and_resolve(main_file)
         expected = {"main_key": "main_value", "child_key": "child_value"}
         assert result == expected

@@ -2,6 +2,10 @@
 
 import os
 import yaml
+import logging
+
+# Get a logger for this module
+logger = logging.getLogger(__name__)
 
 # Define a special class to represent a !reference tag that will be processed later
 class ReferenceTag:
@@ -24,7 +28,7 @@ class ReferenceTag:
 
         # First, find the node with the given name
         if anchor_name not in document:
-            print(f"Warning: Unknown reference target: {anchor_name}")
+            logger.warning(f"Unknown reference target: {anchor_name}")
             return None
 
         current = document[anchor_name]
@@ -114,7 +118,39 @@ def merge_dicts(base, incoming):
             base[key] = value
     return base
 
-def resolve_includes(config, base_path, root_path=None, depth=0):
+def track_job_sources(config, current_file, job_sources=None, all_job_occurrences=None):
+    """
+    Track which file each job comes from.
+
+    Parameters:
+        config (dict): The current YAML configuration.
+        current_file (str): Path to the current file being processed.
+        job_sources (dict): Dictionary to track which file each job comes from.
+        all_job_occurrences (dict): Dictionary to track all occurrences of each job.
+
+    Returns:
+        None: Updates the job_sources and all_job_occurrences dictionaries in place.
+    """
+    if job_sources is None:
+        job_sources = {}
+
+    if all_job_occurrences is None:
+        all_job_occurrences = {}
+
+    reserved_keys = {"include", "workflow", "variables", "stages", "default"}
+    for key in config:
+        if key not in reserved_keys and isinstance(config[key], dict):
+            # Record the source for all jobs, even if they've been seen before
+            # This will ensure we have the most recent source for duplicate jobs
+            job_sources[key] = current_file
+            logger.debug(f"Tracking job '{key}' from file: {current_file}")
+
+            # Track all occurrences of each job
+            if key not in all_job_occurrences:
+                all_job_occurrences[key] = []
+            all_job_occurrences[key].append(current_file)
+
+def resolve_includes(config, base_path, root_path=None, depth=0, current_file=None, job_sources=None, all_job_occurrences=None):
     """
     Recursively resolve and merge included YAML files.
     The 'include' key in the YAML file can be a string (for a single include),
@@ -125,6 +161,9 @@ def resolve_includes(config, base_path, root_path=None, depth=0):
         base_path (str): The directory of the current YAML file to resolve relative paths.
         root_path (str): The root directory of the project, used for resolving nested includes.
         depth (int): Current recursion depth, used for debugging.
+        current_file (str): Path to the current file being processed.
+        job_sources (dict): Dictionary to track which file each job comes from.
+        all_job_occurrences (dict): Dictionary to track all occurrences of each job.
 
     Returns:
         dict: The configuration with all includes resolved and merged.
@@ -132,6 +171,18 @@ def resolve_includes(config, base_path, root_path=None, depth=0):
     # If root_path is not provided, use base_path as the root path
     if root_path is None:
         root_path = base_path
+
+    # Initialize job_sources if not provided
+    if job_sources is None:
+        job_sources = {}
+
+    # Initialize all_job_occurrences if not provided
+    if all_job_occurrences is None:
+        all_job_occurrences = {}
+
+    # Track job sources for the current file
+    if current_file:
+        track_job_sources(config, current_file, job_sources, all_job_occurrences)
 
     # If there's no 'include' key, return the config as-is.
     if "include" not in config:
@@ -159,12 +210,20 @@ def resolve_includes(config, base_path, root_path=None, depth=0):
 
             # Recursively resolve includes in the included file.
             # Always use the root path for resolving nested includes
-            included_config = resolve_includes(included_config, root_path, root_path, depth + 1)
+            included_config = resolve_includes(
+                included_config,
+                root_path,
+                root_path,
+                depth + 1,
+                include_path,
+                job_sources,
+                all_job_occurrences
+            )
 
             # Merge the included configuration into the current configuration.
             merge_dicts(config, included_config)
         except Exception as e:
-            print(f"Warning: Error processing include {inc}: {e}")
+            logger.warning(f"Error processing include {inc}: {e}")
             # Continue with other includes even if one fails
 
     return config
@@ -177,30 +236,57 @@ def load_and_resolve(file_path):
         file_path (str): Path to the root .gitlab-ci.yml file.
 
     Returns:
-        dict: The complete configuration with all includes merged.
+        tuple: (resolved_config, job_sources)
+            - resolved_config: The complete configuration with all includes merged.
+            - job_sources: Dictionary mapping job names to their source files.
     """
     file_path = os.path.abspath(file_path)
     base_path = os.path.dirname(file_path)
-    print(f"Root file: {file_path}")
-    print(f"Base path: {base_path}")
+    logger.info(f"Root file: {file_path}")
+    logger.debug(f"Base path: {base_path}")
     config = load_yaml(file_path)
-    resolved_config = resolve_includes(config, base_path, base_path)
+
+    # Initialize job_sources dictionary and all_jobs_occurrences
+    job_sources = {}
+    all_job_occurrences = {}
+
+    # Track jobs in the root file
+    track_job_sources(config, file_path, job_sources, all_job_occurrences)
+
+    # Resolve includes and track job sources
+    resolved_config = resolve_includes(config, base_path, base_path, 0, file_path, job_sources, all_job_occurrences)
+
     # Now that all includes are resolved, resolve any reference tags
     resolved_config = resolve_references(resolved_config, resolved_config)
-    return resolved_config
+
+    # Update job_sources to include information about all occurrences
+    for job_name, occurrences in all_job_occurrences.items():
+        if len(occurrences) > 1:
+            # If there are multiple occurrences, store the last one as the source
+            # but also add a special attribute to indicate it's a duplicate
+            job_sources[job_name] = occurrences[-1]
+            job_sources[f"{job_name}__duplicates"] = occurrences[:-1]
+
+    return resolved_config, job_sources
 
 # Example usage:
 if __name__ == "__main__":
     import sys
 
+    # Set up basic logging configuration
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
+
     if len(sys.argv) != 2:
-        print("Usage: python loader.py path/to/.gitlab-ci.yml")
+        logger.error("Usage: python loader.py path/to/.gitlab-ci.yml")
         sys.exit(1)
 
     root_file = sys.argv[1]
     try:
-        final_config = load_and_resolve(root_file)
-        print("Final merged configuration:")
-        print(yaml.dump(final_config, default_flow_style=False))
+        final_config, job_sources = load_and_resolve(root_file)
+        logger.info("Final merged configuration:")
+        logger.info(yaml.dump(final_config, default_flow_style=False))
+        logger.info("\nJob sources:")
+        for job_name, source_file in job_sources.items():
+            logger.info(f"  {job_name}: {source_file}")
     except Exception as e:
-        print(f"Error processing the YAML files: {e}")
+        logger.error(f"Error processing the YAML files: {e}")

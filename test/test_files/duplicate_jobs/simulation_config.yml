@@ -1,0 +1,5 @@
+# Simulation configuration for duplicate jobs test
+
+default:
+  CI_PIPELINE_SOURCE: "push"
+  CI_COMMIT_BRANCH: "main"
