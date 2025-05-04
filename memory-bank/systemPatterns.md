@@ -67,10 +67,11 @@ flowchart TD
 - **Design Pattern**: Facade pattern providing a simplified interface to the complex subsystems.
 
 ### 7. Validator Module
-- **Responsibility**: Validates job dependencies and relationships.
+- **Responsibility**: Validates job dependencies, relationships, and configuration issues.
 - **Key Functions**:
   - `validate_job_dependencies()`: Validates that all referenced jobs exist.
   - `validate_job_needs_dependencies()`: Validates that all needed jobs will run in the pipeline.
+  - `detect_duplicate_jobs()`: Detects duplicate job definitions across included files.
 - **Design Pattern**: Visitor pattern for traversing and validating job relationships.
 
 ### 8. CLI Module

@@ -1,11 +1,16 @@
 # Active Context
 
 ## Current Focus
-The current focus is on improving test coverage and enhancing the functionality of the Cimulator project. We've recently fixed two key issues: the GitLab CI `!reference` tag handling and a test failure in the CLI module.
+The current focus is on enhancing the validation capabilities of the Cimulator project. We've recently implemented detection of duplicate jobs in included files, which helps users identify potential issues in their GitLab CI configurations.
 
-Previously, we focused on fixing an issue with the YAML parsing functionality, specifically the tool's inability to handle the GitLab CI `!reference` tag, which is used for referencing parts of the YAML document.
+Previously, we focused on improving test coverage and fixing issues such as the GitLab CI `!reference` tag handling and a test failure in the CLI module.
 
 ## Recent Changes
+- Implemented detection of duplicate jobs in included files
+  - Modified loader.py to track job sources (which file each job comes from)
+  - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions
+  - Updated CLI to display warnings about duplicate jobs
+  - Added tests for the new duplicate job detection functionality
 - Fixed the GitLab CI `!reference` tag handling in the loader.py file by implementing a custom reference resolution mechanism
 - Fixed a test failure in test_simulate_cli_with_profile by including global variables in the simulation summary
 - Added a new test specifically for the `!reference` tag functionality
@@ -59,6 +64,8 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 ## Current Considerations
 1. **YAML Tag Support**: We've implemented support for the GitLab CI `!reference` tag and improved its handling to resolve references after all includes are processed. There may be other GitLab CI-specific YAML tags that need to be handled.
 
+2. **Duplicate Job Detection**: We've implemented detection of duplicate jobs in included files, which helps users identify potential issues in their GitLab CI configurations. This is particularly useful for large projects with many included files.
+
 2. **Code Completeness**: The codebase appears to have implemented most of the core functionality described in the implementation plan, but further analysis is needed to determine if any features are missing.
 
 3. **Testing Coverage**: The project has test files for various components, and we've added a new test for the `!reference` tag functionality. However, more comprehensive test coverage may be needed, especially for edge cases and real-world configurations.
@@ -72,10 +79,12 @@ Previously, we focused on fixing an issue with the YAML parsing functionality, s
 5. **Feature Completeness**: Need to assess if all planned features from the implementation plan have been implemented.
 
 ## Next Steps
-1. Test the `!reference` tag implementation with real GitLab CI configuration files
-2. Identify and implement support for other GitLab CI-specific YAML tags if needed
-3. Enhance error handling for edge cases in YAML parsing and job expansion
-4. Further improve validation against GitLab CI's schema and best practices
+1. Test the duplicate job detection with real GitLab CI configuration files
+2. Consider adding more detailed information about duplicate jobs, such as how they differ
+3. Test the `!reference` tag implementation with real GitLab CI configuration files
+4. Identify and implement support for other GitLab CI-specific YAML tags if needed
+5. Enhance error handling for edge cases in YAML parsing and job expansion
+6. Further improve validation against GitLab CI's schema and best practices
 5. Expand test coverage, particularly for edge cases and real-world configurations
 6. Optimize performance for large configurations
 7. Consider implementing visualization of job dependencies and workflow

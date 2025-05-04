@@ -49,11 +49,18 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
-1. **Fixed GitLab CI `!reference` Tag Support**: Implemented a custom reference resolution mechanism in the loader.py file that properly handles the GitLab CI `!reference` tag. This allows the tool to process YAML files that use this tag to reference parts of the document.
+1. **Implemented Duplicate Job Detection**: Added functionality to detect and warn about duplicate job definitions across included files in GitLab CI configurations.
+   - Modified loader.py to track job sources (which file each job comes from)
+   - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions
+   - Updated CLI to display warnings about duplicate jobs
+   - Added tests for the new duplicate job detection functionality
+   - This helps users identify potential issues in their GitLab CI configurations, particularly in large projects with many included files
 
-2. **Fixed Test Failure**: Modified the simulation_engine.py file to include global variables in the simulation summary, fixing the test_simulate_cli_with_profile test.
+2. **Fixed GitLab CI `!reference` Tag Support**: Implemented a custom reference resolution mechanism in the loader.py file that properly handles the GitLab CI `!reference` tag. This allows the tool to process YAML files that use this tag to reference parts of the document.
 
-3. **Enhanced Test Coverage**: Added a new test specifically for the `!reference` tag functionality, ensuring that this feature works correctly.
+3. **Fixed Test Failure**: Modified the simulation_engine.py file to include global variables in the simulation summary, fixing the test_simulate_cli_with_profile test.
+
+4. **Enhanced Test Coverage**: Added a new test specifically for the `!reference` tag functionality, ensuring that this feature works correctly.
 
 4. **Improved CLI Output Handling**: Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal. This prevents overwhelming the terminal with large outputs and makes it easier to review and process the results.
    - Added `--output`/`-o` option to both commands to specify the output file path
@@ -97,7 +104,7 @@ Based on the codebase analysis and user testing, remaining issues or limitations
 
 2. **Incomplete GitLab CI Feature Support**: Some advanced GitLab CI features may not be fully supported yet.
 
-3. **Limited Validation**: While we've added validation for job dependencies, there are still other aspects of GitLab CI configuration that could benefit from validation against GitLab CI's schema and best practices.
+3. **Limited Validation**: While we've added validation for job dependencies and duplicate jobs, there are still other aspects of GitLab CI configuration that could benefit from validation against GitLab CI's schema and best practices.
 
 4. **Performance with Large Configurations**: The recursive nature of include resolution and job expansion could lead to performance issues with very large or complex configurations.
 
@@ -105,7 +112,10 @@ Based on the codebase analysis and user testing, remaining issues or limitations
 
 1. **Enhance Documentation**: Create comprehensive user and developer documentation.
 
-2. **Improve Validation**: Implement more detailed validation against GitLab CI's schema and best practices.
+2. **Improve Validation**: Continue enhancing validation capabilities, such as:
+   - More detailed validation against GitLab CI's schema and best practices
+   - Additional checks for common configuration issues
+   - More detailed information about duplicate jobs, such as how they differ
 
 3. **Expand Test Coverage**: Add more tests, particularly for edge cases and real-world configurations.
 
