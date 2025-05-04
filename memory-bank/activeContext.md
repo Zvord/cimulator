@@ -6,6 +6,11 @@ The current focus is on enhancing the validation capabilities of the Cimulator p
 Previously, we focused on improving test coverage and fixing issues such as the GitLab CI `!reference` tag handling and a test failure in the CLI module.
 
 ## Recent Changes
+- Fixed a bug where script lines containing colons were parsed as dictionaries instead of strings
+  - Added a post-processing step in the `load_yaml` function to ensure all script items are strings
+  - Created a new `ensure_script_items_are_strings` function that recursively processes the loaded YAML
+  - Added a test case in `test_script_items_as_strings.py` to verify the fix
+  - Ensured the fix doesn't break existing functionality for variable expansion in script commands
 - Implemented detection of duplicate jobs in included files
   - Modified loader.py to track job sources (which file each job comes from)
   - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions

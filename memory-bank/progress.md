@@ -49,7 +49,14 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
-1. **Implemented Duplicate Job Detection**: Added functionality to detect and warn about duplicate job definitions across included files in GitLab CI configurations.
+1. **Fixed Script Items Parsing Bug**: Fixed a bug where script lines containing colons were parsed as dictionaries instead of strings.
+   - Added a post-processing step in the `load_yaml` function to ensure all script items are strings
+   - Created a new `ensure_script_items_are_strings` function that recursively processes the loaded YAML
+   - Added a test case in `test_script_items_as_strings.py` to verify the fix
+   - Ensured the fix doesn't break existing functionality for variable expansion in script commands
+   - This fix ensures that GitLab CI script items are always treated as strings, even when they contain colons
+
+2. **Implemented Duplicate Job Detection**: Added functionality to detect and warn about duplicate job definitions across included files in GitLab CI configurations.
    - Modified loader.py to track job sources (which file each job comes from)
    - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions
    - Updated CLI to display warnings about duplicate jobs

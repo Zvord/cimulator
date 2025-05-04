@@ -91,6 +91,51 @@ def resolve_references(obj, document):
         return obj.resolve(document)
     return obj
 
+def ensure_script_items_are_strings(config):
+    """
+    Ensure that all script items in job definitions are strings.
+    This is necessary because PyYAML may parse items with colons as dictionaries.
+
+    Args:
+        config (dict): The configuration dictionary to process.
+
+    Returns:
+        dict: The processed configuration with all script items as strings.
+
+    Raises:
+        ValueError: If a script item is a dictionary with more than one key-value pair.
+    """
+    # Skip if config is not a dictionary
+    if not isinstance(config, dict):
+        return config
+
+    # Process each key-value pair in the config
+    for key, value in config.items():
+        # If this is a job definition (not a reserved key) and it's a dictionary
+        if key not in {"include", "workflow", "variables", "stages", "default"} and isinstance(value, dict):
+            # If the job has a script section
+            if "script" in value and isinstance(value["script"], list):
+                # Process each script item
+                for i, item in enumerate(value["script"]):
+                    # If the item is not a string, convert it to a string
+                    if not isinstance(item, str):
+                        if isinstance(item, dict):
+                            if len(item) == 1:
+                                # Convert dictionary to "key: value" string format
+                                dict_key, dict_value = list(item.items())[0]
+                                value["script"][i] = f"{dict_key}: {dict_value}"
+                            else:
+                                # If the dictionary has more than one key-value pair, it's an error
+                                raise ValueError(f"Invalid script item: {item}. Script items must be strings, but found a dictionary with multiple key-value pairs.")
+                        else:
+                            # For other types, use string representation
+                            value["script"][i] = str(item)
+        # Recursively process nested dictionaries
+        elif isinstance(value, dict):
+            config[key] = ensure_script_items_are_strings(value)
+
+    return config
+
 def load_yaml(file_path):
     """
     Load a YAML file and return its contents as a dictionary.
@@ -102,6 +147,8 @@ def load_yaml(file_path):
     """
     with open(file_path, 'r') as f:
         document = yaml.load(f, Loader=GitLabCILoader) or {}
+        # Ensure all script items are strings
+        document = ensure_script_items_are_strings(document)
         return document
 
 def merge_dicts(base, incoming):

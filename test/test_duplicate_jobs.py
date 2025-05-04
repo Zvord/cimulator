@@ -16,7 +16,7 @@ from src.cimulator.cli import main
 class TestDuplicateJobs(unittest.TestCase):
     def setUp(self):
         # Set up paths to test files
-        self.test_dir = os.path.join(os.path.dirname(__file__), 'duplicate_jobs_test')
+        self.test_dir = os.path.join(os.path.dirname(__file__), 'test_files', 'duplicate_jobs')
         self.ci_file = os.path.join(self.test_dir, '.gitlab-ci.yml')
         self.file1 = os.path.join(self.test_dir, 'file1.yml')
         self.file2 = os.path.join(self.test_dir, 'file2.yml')
