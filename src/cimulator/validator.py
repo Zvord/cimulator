@@ -6,11 +6,13 @@ focusing on job dependencies and relationships.
 """
 
 import logging
+from typing import List, Set, Optional, Union
+from cimulator.types import JobDict, JobSourcesDict
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
-def detect_duplicate_jobs(all_jobs, job_sources=None):
+def detect_duplicate_jobs(all_jobs: JobDict, job_sources: Optional[JobSourcesDict] = None) -> List[str]:
     """
     Detect duplicate job names in the configuration.
 
@@ -64,7 +66,7 @@ def detect_duplicate_jobs(all_jobs, job_sources=None):
     logger.debug(f"Found {len(duplicate_warnings)} duplicate warnings")
     return duplicate_warnings
 
-def validate_job_dependencies(all_jobs):
+def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
     """
     Validate job dependencies (extends and needs).
 
@@ -119,7 +121,7 @@ def validate_job_dependencies(all_jobs):
 
     return errors
 
-def validate_job_needs_dependencies(simulation_jobs, running_jobs):
+def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str]) -> List[str]:
     """
     Validate that all jobs needed by running jobs are also running.
 

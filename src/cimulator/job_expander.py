@@ -1,8 +1,10 @@
 # src/cimulator/job_expander.py
 
+from typing import Set, Optional
+from cimulator.types import JobDict
 from cimulator.loader import merge_dicts
 
-def expand_job(job_name, all_jobs, cache=None, visited=None):
+def expand_job(job_name: str, all_jobs: JobDict, cache: Optional[JobDict] = None, visited: Optional[Set[str]] = None) -> JobDict:
     """
     Recursively expand a job definition using the "extends" mechanism.
 
@@ -52,7 +54,7 @@ def expand_job(job_name, all_jobs, cache=None, visited=None):
         extends_field = [extends_field]
 
     # Start with an empty parent configuration.
-    merged_parent = {}
+    merged_parent: JobDict = {}
     for parent_name in extends_field:
         if parent_name not in all_jobs:
             raise Exception(f"Parent job '{parent_name}' not found for job '{job_name}'")
@@ -67,7 +69,7 @@ def expand_job(job_name, all_jobs, cache=None, visited=None):
     visited.remove(job_name)
     return merged
 
-def expand_all_jobs(all_jobs):
+def expand_all_jobs(all_jobs: JobDict) -> JobDict:
     """
     Expand all job definitions contained in all_jobs.
 

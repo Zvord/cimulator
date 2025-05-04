@@ -1,7 +1,9 @@
 import re
+from typing import List, Tuple, Optional, Union
+from cimulator.types import ConfigDict, VariablesDict
 from cimulator.variable_expander import expand_variables, expand_variables_in_string
 
-def regex_match(value, pattern):
+def regex_match(value: str, pattern: str) -> bool:
     """
     Check if the value matches the regex pattern.
     """
@@ -10,7 +12,7 @@ def regex_match(value, pattern):
     except Exception:
         return False
 
-def regex_not_match(value, pattern):
+def regex_not_match(value: str, pattern: str) -> bool:
     """
     Check if the value does NOT match the regex pattern.
     """
@@ -19,7 +21,7 @@ def regex_not_match(value, pattern):
     except Exception:
         return True
 
-def preprocess_condition(condition):
+def preprocess_condition(condition: str) -> str:
     """
     Transform a condition string into a Python evaluable expression.
 
@@ -68,7 +70,7 @@ def preprocess_condition(condition):
     condition = re.sub(r'\$(\w+)', r'\1', condition)
     return condition
 
-def evaluate_condition(condition, variables):
+def evaluate_condition(condition: str, variables: VariablesDict) -> bool:
     """
     Evaluate a condition string against a set of variables.
 
@@ -121,7 +123,7 @@ def evaluate_condition(condition, variables):
         print(f"Error evaluating condition '{condition}' (expanded to '{expanded_condition}'): {e}")
         return False
 
-def evaluate_rules(rules, variables):
+def evaluate_rules(rules: List[ConfigDict], variables: VariablesDict) -> Tuple[bool, Optional[ConfigDict], VariablesDict, Optional[str]]:
     """
     Evaluate a list of rules.
 
@@ -150,7 +152,7 @@ def evaluate_rules(rules, variables):
             return (should_run, rule, applied_variables, condition)
     return (False, None, {}, None)
 
-def evaluate_workflow(workflow_config, variables):
+def evaluate_workflow(workflow_config: ConfigDict, variables: VariablesDict) -> Tuple[bool, Optional[ConfigDict], VariablesDict, Optional[str]]:
     """
     Evaluate a workflow configuration.
 

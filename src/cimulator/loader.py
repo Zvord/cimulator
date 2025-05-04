@@ -3,16 +3,18 @@
 import os
 import yaml
 import logging
+from typing import List, Union, Optional, Tuple, Set, Any
+from cimulator.types import ConfigDict, JobDict, JobSourcesDict, JobOccurrencesDict
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
 
 # Define a special class to represent a !reference tag that will be processed later
 class ReferenceTag:
-    def __init__(self, path_components):
+    def __init__(self, path_components: List[Union[str, int]]) -> None:
         self.path_components = path_components
 
-    def resolve(self, document):
+    def resolve(self, document: ConfigDict) -> Any:
         """
         Resolve the reference by navigating through the document.
 
@@ -23,19 +25,20 @@ class ReferenceTag:
             The referenced value
         """
         # Start with the first component (the anchor name without the &)
-        current = document
+        current: Any = document
         anchor_name = self.path_components[0]
 
         # First, find the node with the given name
-        if anchor_name not in document:
+        if isinstance(anchor_name, str) and anchor_name not in document:
             logger.warning(f"Unknown reference target: {anchor_name}")
             return None
 
-        current = document[anchor_name]
+        if isinstance(anchor_name, str):
+            current = document[anchor_name]
 
         # Navigate through the remaining path components
         for component in self.path_components[1:]:
-            if isinstance(current, dict) and component in current:
+            if isinstance(current, dict) and isinstance(component, str) and component in current:
                 current = current[component]
             elif isinstance(current, list) and isinstance(component, int) and 0 <= component < len(current):
                 current = current[component]
@@ -45,7 +48,7 @@ class ReferenceTag:
         return current
 
 # Define a constructor for the !reference tag.
-def reference_constructor(loader, node):
+def reference_constructor(loader: yaml.SafeLoader, node: yaml.Node) -> Any:
     """
     Constructor for the !reference tag in GitLab CI YAML files.
     Returns a ReferenceTag object that will be resolved later.
@@ -61,7 +64,8 @@ def reference_constructor(loader, node):
         elif isinstance(node, yaml.MappingNode):
             return loader.construct_mapping(node)
         else:
-            return loader.construct_scalar(node)
+            # Handle other node types safely
+            return str(node)
 
 # Create a custom YAML loader that includes our constructor
 class GitLabCILoader(yaml.SafeLoader):
@@ -70,7 +74,7 @@ class GitLabCILoader(yaml.SafeLoader):
 # Register the constructor with our custom loader
 GitLabCILoader.add_constructor('!reference', reference_constructor)
 
-def resolve_references(obj, document):
+def resolve_references(obj: Any, document: ConfigDict) -> Any:
     """
     Recursively resolve all ReferenceTag objects in the given object.
 
@@ -91,7 +95,7 @@ def resolve_references(obj, document):
         return obj.resolve(document)
     return obj
 
-def ensure_script_items_are_strings(config):
+def ensure_script_items_are_strings(config: ConfigDict) -> ConfigDict:
     """
     Ensure that all script items in job definitions are strings.
     This is necessary because PyYAML may parse items with colons as dictionaries.
@@ -136,7 +140,7 @@ def ensure_script_items_are_strings(config):
 
     return config
 
-def load_yaml(file_path):
+def load_yaml(file_path: str) -> ConfigDict:
     """
     Load a YAML file and return its contents as a dictionary.
     If the file is empty, return an empty dictionary.
@@ -151,7 +155,7 @@ def load_yaml(file_path):
         document = ensure_script_items_are_strings(document)
         return document
 
-def merge_dicts(base, incoming):
+def merge_dicts(base: ConfigDict, incoming: ConfigDict) -> ConfigDict:
     """
     Recursively merge two dictionaries.
     For keys that exist in both dictionaries and are themselves dictionaries,
@@ -165,7 +169,9 @@ def merge_dicts(base, incoming):
             base[key] = value
     return base
 
-def track_job_sources(config, current_file, job_sources=None, all_job_occurrences=None):
+def track_job_sources(config: ConfigDict, current_file: str,
+                     job_sources: Optional[JobSourcesDict] = None,
+                     all_job_occurrences: Optional[JobOccurrencesDict] = None) -> None:
     """
     Track which file each job comes from.
 
@@ -197,7 +203,11 @@ def track_job_sources(config, current_file, job_sources=None, all_job_occurrence
                 all_job_occurrences[key] = []
             all_job_occurrences[key].append(current_file)
 
-def resolve_includes(config, base_path, root_path=None, depth=0, current_file=None, job_sources=None, all_job_occurrences=None):
+def resolve_includes(config: ConfigDict, base_path: str,
+                    root_path: Optional[str] = None, depth: int = 0,
+                    current_file: Optional[str] = None,
+                    job_sources: Optional[JobSourcesDict] = None,
+                    all_job_occurrences: Optional[JobOccurrencesDict] = None) -> ConfigDict:
     """
     Recursively resolve and merge included YAML files.
     The 'include' key in the YAML file can be a string (for a single include),
@@ -275,7 +285,7 @@ def resolve_includes(config, base_path, root_path=None, depth=0, current_file=No
 
     return config
 
-def load_and_resolve(file_path):
+def load_and_resolve(file_path: str) -> Tuple[ConfigDict, JobSourcesDict]:
     """
     Load the root YAML file and resolve all includes recursively.
 
@@ -294,8 +304,8 @@ def load_and_resolve(file_path):
     config = load_yaml(file_path)
 
     # Initialize job_sources dictionary and all_jobs_occurrences
-    job_sources = {}
-    all_job_occurrences = {}
+    job_sources: JobSourcesDict = {}
+    all_job_occurrences: JobOccurrencesDict = {}
 
     # Track jobs in the root file
     track_job_sources(config, file_path, job_sources, all_job_occurrences)

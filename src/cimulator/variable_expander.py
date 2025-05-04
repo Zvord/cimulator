@@ -1,6 +1,8 @@
 import re
+from typing import Any, List, Union, Optional
+from cimulator.types import VariablesDict
 
-def expand_variables_in_string(text, variables):
+def expand_variables_in_string(text: str, variables: VariablesDict) -> str:
     """
     Replace placeholders in a string with corresponding variable values.
     Supports placeholders in the form $VAR or ${VAR}.
@@ -13,7 +15,7 @@ def expand_variables_in_string(text, variables):
 
     return pattern.sub(replace, text)
 
-def expand_variables(obj, variables):
+def expand_variables(obj: Any, variables: VariablesDict) -> Any:
     """
     Recursively expand variables in the given object.
     The object can be a dict, list, or string.

@@ -1,4 +1,6 @@
 import logging
+from typing import List, Set, Tuple, Optional, Union
+from cimulator.types import JobDict, ConfigDict, VariablesDict
 from cimulator.job_expander import expand_all_jobs
 from cimulator.workflow import evaluate_workflow, evaluate_rules
 from cimulator.variable_expander import expand_variables
@@ -7,7 +9,7 @@ from cimulator.validator import validate_job_needs_dependencies
 # Get the logger for this module
 logger = logging.getLogger(__name__)
 
-def simulate_pipeline(all_jobs, workflow_config, global_variables):
+def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_variables: VariablesDict) -> ConfigDict:
     """
     Simulate a pipeline by processing jobs, evaluating workflow rules, and expanding variables.
 

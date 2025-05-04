@@ -1,6 +1,7 @@
 import yaml
+from cimulator.types import ConfigDict
 
-def load_simulation_config(file_path):
+def load_simulation_config(file_path: str) -> ConfigDict:
     """
     Load a simulation configuration YAML file.
 

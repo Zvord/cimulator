@@ -4,14 +4,16 @@ import yaml
 import logging
 import os
 import traceback
+from typing import List, Optional, Union, Tuple, Set, NoReturn
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
+from cimulator.types import ConfigDict, JobDict, JobSourcesDict
 from cimulator.loader import load_and_resolve
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
 from cimulator.config import load_simulation_config
 from cimulator.validator import validate_job_dependencies, detect_duplicate_jobs
 
-def setup_logging(level):
+def setup_logging(level: int) -> None:
     """
     Set up logging configuration for the entire application.
 
@@ -33,7 +35,7 @@ def setup_logging(level):
     ch.setFormatter(formatter)
     root_logger.addHandler(ch)
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
         description="GitLab CI Simulator - Validate and simulate GitLab CI pipelines."
     )
