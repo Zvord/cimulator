@@ -1,9 +1,9 @@
 # Active Context
 
 ## Current Focus
-The current focus is on enhancing the validation capabilities of the Cimulator project. We've recently implemented detection of duplicate jobs in included files, which helps users identify potential issues in their GitLab CI configurations.
+The current focus is on enhancing the GitLab CI `!reference` tag support with advanced array flattening capabilities. We've recently implemented sophisticated reference resolution that properly handles array flattening when references are used within lists, which is critical for GitLab CI rules that reference other rule arrays.
 
-Previously, we focused on improving test coverage and fixing issues such as the GitLab CI `!reference` tag handling and a test failure in the CLI module.
+Previously, we focused on enhancing validation capabilities, implementing detection of duplicate jobs in included files, and improving test coverage for GitLab CI features.
 
 ## Recent Changes
 - Fixed a bug where script lines containing colons were parsed as dictionaries instead of strings
@@ -16,9 +16,14 @@ Previously, we focused on improving test coverage and fixing issues such as the 
   - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions
   - Updated CLI to display warnings about duplicate jobs
   - Added tests for the new duplicate job detection functionality
-- Fixed the GitLab CI `!reference` tag handling in the loader.py file by implementing a custom reference resolution mechanism
+- Enhanced the GitLab CI `!reference` tag handling with sophisticated array flattening capabilities
+  - Implemented advanced reference resolution that properly handles array flattening when references are used within lists
+  - Modified the `resolve_references` function in loader.py to detect when a ReferenceTag resolves to a list and flatten it into the parent array
+  - Added comprehensive test coverage for array flattening scenarios in rules sections
+  - Added test for file list templates with YAML anchors and references in rules changes section
+  - Fixed edge cases where references to arrays within other arrays were not properly flattened
 - Fixed a test failure in test_simulate_cli_with_profile by including global variables in the simulation summary
-- Added a new test specifically for the `!reference` tag functionality
+- Enhanced test coverage for the `!reference` tag functionality with multiple test scenarios
 - Verified that all tests are now passing
 - Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal
   - Added --output/-o option to both commands to specify the output file path
@@ -67,13 +72,23 @@ Previously, we focused on improving test coverage and fixing issues such as the 
    - CLI Module: For providing the command-line interface
 
 ## Current Considerations
-1. **YAML Tag Support**: We've implemented support for the GitLab CI `!reference` tag and improved its handling to resolve references after all includes are processed. There may be other GitLab CI-specific YAML tags that need to be handled.
+1. **Advanced Reference Tag Support**: We've implemented sophisticated support for the GitLab CI `!reference` tag with array flattening capabilities. The system now properly handles:
+   - References that resolve to arrays and flatten them into parent lists
+   - Complex scenarios like file list templates with YAML anchors referenced in rules changes sections
+   - Edge cases where references appear in the middle of arrays and need to be flattened seamlessly
+   - References across included files resolved after all includes are processed
+   There may be other GitLab CI-specific YAML tags that need similar advanced handling.
 
 2. **Duplicate Job Detection**: We've implemented detection of duplicate jobs in included files, which helps users identify potential issues in their GitLab CI configurations. This is particularly useful for large projects with many included files.
 
 2. **Code Completeness**: The codebase appears to have implemented most of the core functionality described in the implementation plan, but further analysis is needed to determine if any features are missing.
 
-3. **Testing Coverage**: The project has test files for various components, and we've added a new test for the `!reference` tag functionality. However, more comprehensive test coverage may be needed, especially for edge cases and real-world configurations.
+3. **Testing Coverage**: The project has comprehensive test files for various components, and we've significantly enhanced test coverage for the `!reference` tag functionality with multiple test scenarios including:
+   - Basic reference resolution in rules sections
+   - Array flattening when references resolve to lists
+   - File list templates with YAML anchors used in rules changes sections
+   - Complex scenarios with references in the middle of arrays
+   However, more comprehensive test coverage may still be needed for edge cases and real-world configurations.
 
 4. **Documentation Needs**: While the memory bank now provides high-level documentation, more detailed documentation may be needed for:
    - Usage examples
@@ -84,12 +99,13 @@ Previously, we focused on improving test coverage and fixing issues such as the 
 5. **Feature Completeness**: Need to assess if all planned features from the implementation plan have been implemented.
 
 ## Next Steps
-1. Test the duplicate job detection with real GitLab CI configuration files
-2. Consider adding more detailed information about duplicate jobs, such as how they differ
-3. Test the `!reference` tag implementation with real GitLab CI configuration files
-4. Identify and implement support for other GitLab CI-specific YAML tags if needed
-5. Enhance error handling for edge cases in YAML parsing and job expansion
-6. Further improve validation against GitLab CI's schema and best practices
+1. Test the enhanced `!reference` tag implementation with array flattening in real GitLab CI configuration files
+2. Verify the file list template functionality works correctly with complex GitLab CI configurations
+3. Test the duplicate job detection with real GitLab CI configuration files
+4. Consider adding more detailed information about duplicate jobs, such as how they differ
+5. Identify and implement support for other GitLab CI-specific YAML tags that might need similar advanced handling
+6. Enhance error handling for edge cases in YAML parsing and job expansion, particularly for reference resolution
+7. Further improve validation against GitLab CI's schema and best practices
 5. Expand test coverage, particularly for edge cases and real-world configurations
 6. Optimize performance for large configurations
 7. Consider implementing visualization of job dependencies and workflow

@@ -24,13 +24,15 @@ flowchart TD
 ## Core Components
 
 ### 1. Loader Module
-- **Responsibility**: Loads and parses GitLab CI YAML files, resolving includes recursively.
+- **Responsibility**: Loads and parses GitLab CI YAML files, resolving includes recursively, and handling advanced GitLab CI features like `!reference` tags with array flattening.
 - **Key Functions**:
-  - `load_yaml()`: Loads a YAML file into a dictionary.
+  - `load_yaml()`: Loads a YAML file into a dictionary using a custom GitLab CI YAML loader.
   - `merge_dicts()`: Recursively merges dictionaries.
   - `resolve_includes()`: Resolves and merges included YAML files.
-  - `load_and_resolve()`: Main entry point that loads the root file and resolves all includes.
-- **Design Pattern**: Composite pattern for handling nested includes.
+  - `resolve_references()`: Recursively resolves `!reference` tags with sophisticated array flattening capabilities.
+  - `load_and_resolve()`: Main entry point that loads the root file, resolves all includes, and processes references.
+  - `ensure_script_items_are_strings()`: Post-processes YAML to ensure script items are always strings.
+- **Design Pattern**: Composite pattern for handling nested includes, Visitor pattern for reference resolution.
 
 ### 2. Job Expander Module
 - **Responsibility**: Expands job definitions using the "extends" mechanism.
@@ -117,8 +119,13 @@ flowchart TD
 
 1. **Recursive Processing**: Using recursion for handling nested includes and job extensions.
 2. **Deep Dictionary Merging**: Implementing GitLab's specific rules for merging dictionaries and arrays.
-3. **Condition Evaluation**: Converting GitLab CI condition syntax to Python-evaluable expressions.
-4. **Modular Design**: Separating concerns into distinct modules for better maintainability.
-5. **Logging**: Using Python's logging module for detailed debugging information with configurable verbosity.
-6. **Validation**: Implementing comprehensive validation for job dependencies to catch configuration errors early.
-7. **Error Handling**: Using clear, actionable error messages that explain the specific issues found.
+3. **Advanced Reference Resolution**: Implementing sophisticated `!reference` tag handling with:
+   - Custom YAML loader that recognizes GitLab CI tags
+   - Array flattening when references resolve to lists
+   - Delayed resolution after all includes are processed
+   - Support for complex scenarios like file list templates with YAML anchors
+4. **Condition Evaluation**: Converting GitLab CI condition syntax to Python-evaluable expressions.
+5. **Modular Design**: Separating concerns into distinct modules for better maintainability.
+6. **Logging**: Using Python's logging module for detailed debugging information with configurable verbosity.
+7. **Validation**: Implementing comprehensive validation for job dependencies to catch configuration errors early.
+8. **Error Handling**: Using clear, actionable error messages that explain the specific issues found.
