@@ -63,11 +63,22 @@ The project is structured as a Python package with a clear modular architecture 
    - Added tests for the new duplicate job detection functionality
    - This helps users identify potential issues in their GitLab CI configurations, particularly in large projects with many included files
 
-2. **Fixed GitLab CI `!reference` Tag Support**: Implemented a custom reference resolution mechanism in the loader.py file that properly handles the GitLab CI `!reference` tag. This allows the tool to process YAML files that use this tag to reference parts of the document.
+2. **Enhanced GitLab CI `!reference` Tag Support**: Implemented sophisticated reference resolution with advanced array flattening capabilities.
+   - Created a custom YAML loader that recognizes GitLab CI `!reference` tags
+   - Implemented array flattening when references resolve to lists, critical for rules that reference other rule arrays
+   - Added support for complex scenarios like file list templates with YAML anchors referenced in rules changes sections
+   - Enhanced the `resolve_references` function to properly handle references that appear in the middle of arrays
+   - Delayed reference resolution until after all includes are processed to support cross-file references
+   - Added comprehensive test coverage for various reference scenarios including array flattening
 
 3. **Fixed Test Failure**: Modified the simulation_engine.py file to include global variables in the simulation summary, fixing the test_simulate_cli_with_profile test.
 
-4. **Enhanced Test Coverage**: Added a new test specifically for the `!reference` tag functionality, ensuring that this feature works correctly.
+4. **Enhanced Test Coverage**: Significantly expanded test coverage for the `!reference` tag functionality with multiple comprehensive test scenarios:
+   - Basic reference resolution in rules sections
+   - Array flattening when references resolve to lists
+   - File list templates with YAML anchors used in rules changes sections
+   - Complex scenarios with references in the middle of arrays that need seamless flattening
+   - Cross-file reference resolution after all includes are processed
 
 4. **Improved CLI Output Handling**: Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal. This prevents overwhelming the terminal with large outputs and makes it easier to review and process the results.
    - Added `--output`/`-o` option to both commands to specify the output file path

@@ -89,8 +89,23 @@ def resolve_references(obj: Any, document: ConfigDict) -> Any:
         for key, value in list(obj.items()):
             obj[key] = resolve_references(value, document)
     elif isinstance(obj, list):
-        for i, item in enumerate(obj):
-            obj[i] = resolve_references(item, document)
+        i = 0
+        while i < len(obj):
+            item = obj[i]
+            resolved_item = resolve_references(item, document)
+            
+            # If the resolved item is a list and the original item was a ReferenceTag,
+            # flatten the resolved list into the parent list
+            if isinstance(item, ReferenceTag) and isinstance(resolved_item, list):
+                # Remove the current item and insert all elements from resolved_item
+                obj.pop(i)
+                for j, subitem in enumerate(resolved_item):
+                    obj.insert(i + j, subitem)
+                # Move index forward by the number of items we inserted
+                i += len(resolved_item)
+            else:
+                obj[i] = resolved_item
+                i += 1
     elif isinstance(obj, ReferenceTag):
         return obj.resolve(document)
     return obj
