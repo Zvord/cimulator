@@ -49,94 +49,23 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
-1. **Fixed Script Items Parsing Bug**: Fixed a bug where script lines containing colons were parsed as dictionaries instead of strings.
-   - Added a post-processing step in the `load_yaml` function to ensure all script items are strings
-   - Created a new `ensure_script_items_are_strings` function that recursively processes the loaded YAML
-   - Added a test case in `test_script_items_as_strings.py` to verify the fix
-   - Ensured the fix doesn't break existing functionality for variable expansion in script commands
-   - This fix ensures that GitLab CI script items are always treated as strings, even when they contain colons
-
-2. **Implemented Duplicate Job Detection**: Added functionality to detect and warn about duplicate job definitions across included files in GitLab CI configurations.
-   - Modified loader.py to track job sources (which file each job comes from)
-   - Added a new function `detect_duplicate_jobs()` in validator.py to identify duplicate job definitions
-   - Updated CLI to display warnings about duplicate jobs
-   - Added tests for the new duplicate job detection functionality
-   - This helps users identify potential issues in their GitLab CI configurations, particularly in large projects with many included files
-
-2. **Enhanced GitLab CI `!reference` Tag Support**: Implemented sophisticated reference resolution with advanced array flattening capabilities.
-   - Created a custom YAML loader that recognizes GitLab CI `!reference` tags
-   - Implemented array flattening when references resolve to lists, critical for rules that reference other rule arrays
-   - Added support for complex scenarios like file list templates with YAML anchors referenced in rules changes sections
-   - Enhanced the `resolve_references` function to properly handle references that appear in the middle of arrays
-   - Delayed reference resolution until after all includes are processed to support cross-file references
-   - Added comprehensive test coverage for various reference scenarios including array flattening
-
-3. **Fixed Test Failure**: Modified the simulation_engine.py file to include global variables in the simulation summary, fixing the test_simulate_cli_with_profile test.
-
-4. **Enhanced Test Coverage**: Significantly expanded test coverage for the `!reference` tag functionality with multiple comprehensive test scenarios:
-   - Basic reference resolution in rules sections
-   - Array flattening when references resolve to lists
-   - File list templates with YAML anchors used in rules changes sections
-   - Complex scenarios with references in the middle of arrays that need seamless flattening
-   - Cross-file reference resolution after all includes are processed
-
-4. **Improved CLI Output Handling**: Modified the CLI module to save the output of validate and simulate commands to files instead of printing to the terminal. This prevents overwhelming the terminal with large outputs and makes it easier to review and process the results.
-   - Added `--output`/`-o` option to both commands to specify the output file path
-   - Updated tests to verify the new behavior
-   - Added user-friendly success messages that show the absolute path to the output file
-
-5. **Enhanced Reference Tag Handling**: Improved the handling of GitLab CI `!reference` tags to resolve references after all includes are processed. This fixes issues with references across included files, such as filelists defined in template files being referenced in other files.
-   - Modified the loader.py file to delay reference resolution until after all includes are resolved
-   - Updated the test_reference_tag.py file to account for the new behavior
-   - Verified that references across included files are now resolved correctly
-
-6. **Added Configurable Logging Level**: Implemented a command-line option to control the verbosity of logging output, making it easier to debug issues or run with minimal output.
-   - Added a global `--log-level`/`-l` argument to the CLI with choices: debug, info, warning, error, critical
-   - Centralized logging configuration in the CLI module with a `setup_logging()` function
-   - Removed duplicate logging setup in simulation_engine.py
-   - Set INFO as the default log level, with DEBUG available for detailed output when needed
-
-7. **Enhanced Job Dependency Validation**: Added comprehensive validation for job dependencies to catch configuration errors early.
-   - Created a new validator module with dedicated validation functions
-   - Added validation in the `validate` command to check for jobs that extend or need non-existing jobs
-   - Added validation in the `simulate` command to check for jobs that need other jobs which won't run in the pipeline
-   - Implemented clear error messages that explain the specific dependency issues
-   - Added unit tests for the new validation functionality
-   - Enhanced to support GitLab CI's complex "needs" format (dictionary with 'job' key) for advanced job dependencies
-   - Fixed validation to properly handle template jobs (starting with a dot) to avoid false validation errors
-   - Added comprehensive tests for template job validation
-   - Changed dependency errors to warnings in the simulate command for better usability
-   - Added all expanded jobs with variables substituted to the simulation output for debugging
-   - Fixed variable expansion in rules to properly handle variables in conditions and rule variables
-   - Fixed a bug where variables in rule conditions were being expanded incorrectly
-   - Improved variable expansion in job definitions to correctly handle nested variables
-   - Added special handling for regex conditions in rule evaluation
-   - Fixed handling of non-existing variables to expand them to empty strings
-   - Added comprehensive tests for non-existing variables in various contexts
+1. **Script parsing bug fix**: Script lines with colons now parsed as strings, not dictionaries
+2. **Duplicate job detection**: Track job sources across files with validation warnings
+3. **Advanced `!reference` support**: Array flattening, cross-file references, complex scenarios
+4. **CLI improvements**: File output with --output option, configurable logging levels
+5. **Enhanced validation**: Job dependencies, template job handling, variable expansion fixes
 
 ## Known Issues
 
-Based on the codebase analysis and user testing, remaining issues or limitations include:
-
-1. **Limited Error Handling**: The error handling could be more robust, particularly for edge cases in YAML parsing and job expansion.
-
-2. **Incomplete GitLab CI Feature Support**: Some advanced GitLab CI features may not be fully supported yet.
-
-3. **Limited Validation**: While we've added validation for job dependencies and duplicate jobs, there are still other aspects of GitLab CI configuration that could benefit from validation against GitLab CI's schema and best practices.
-
-4. **Performance with Large Configurations**: The recursive nature of include resolution and job expansion could lead to performance issues with very large or complex configurations.
+1. **Limited error handling**: Edge cases in YAML parsing and job expansion
+2. **Incomplete GitLab CI support**: Missing some advanced features
+3. **Limited validation**: Need more schema and best practices validation
+4. **Performance**: Large configurations may have performance issues
 
 ## Next Development Priorities
 
-1. **Enhance Documentation**: Create comprehensive user and developer documentation.
-
-2. **Improve Validation**: Continue enhancing validation capabilities, such as:
-   - More detailed validation against GitLab CI's schema and best practices
-   - Additional checks for common configuration issues
-   - More detailed information about duplicate jobs, such as how they differ
-
-3. **Expand Test Coverage**: Add more tests, particularly for edge cases and real-world configurations.
-
-4. **Optimize Performance**: Identify and address performance bottlenecks for large configurations.
-
-5. **Add Visualization**: Implement visualization of job dependencies and workflow.
+1. **Documentation**: Comprehensive user and developer guides
+2. **Enhanced validation**: Schema validation, best practices, duplicate job details
+3. **Test coverage**: Edge cases and real-world configurations
+4. **Performance optimization**: Large configuration handling
+5. **Visualization**: Job dependencies and workflow diagrams
