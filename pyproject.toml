@@ -4,7 +4,7 @@ build-backend = "poetry.core.masonry.api"
 
 [project]
 name = "cimulator"
-version = "0.1.1"
+version = "0.1.2"
 description = "A tool to validate and simulate GitLab CI pipelines"
 readme = "README.md"
 license = {text = "MIT"}
