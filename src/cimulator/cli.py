@@ -205,10 +205,17 @@ def main() -> None:
                 f.write('\n'.join(processed_lines))
 
             # Check for dependency errors (show as warnings, not hard errors)
+            has_non_optional_dependency_error = False
             if simulation_summary.get("dependency_errors"):
                 print("\nWarnings about job dependencies:", file=sys.stderr)
                 for error in simulation_summary["dependency_errors"]:
-                    print(f"  - {error}", file=sys.stderr)
+                    # Check if this is a non-optional dependency error
+                    if not error.get("is_optional", False):
+                        has_non_optional_dependency_error = True
+
+                    # Add [Optional] prefix for optional dependencies
+                    prefix = "[Optional] " if error.get("is_optional", False) else ""
+                    print(f"  - {prefix}{error['message']}", file=sys.stderr)
 
             # Display warnings about duplicate jobs
             if duplicate_warnings:
@@ -217,6 +224,10 @@ def main() -> None:
                     print(f"  - {warning}", file=sys.stderr)
 
             print(f"Simulation successful. Output saved to {os.path.abspath(args.output)}")
+
+            # Exit with 1 if there's at least one non-optional dependency error, 0 otherwise
+            if has_non_optional_dependency_error:
+                sys.exit(1)
         except Exception as e:
             exc_type, exc_value, exc_traceback = sys.exc_info()
             tb = traceback.extract_tb(exc_traceback)

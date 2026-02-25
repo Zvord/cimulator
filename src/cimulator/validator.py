@@ -121,7 +121,7 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
 
     return errors
 
-def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str]) -> List[str]:
+def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str]) -> List[dict]:
     """
     Validate that all jobs needed by running jobs are also running.
 
@@ -130,7 +130,8 @@ def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[
         running_jobs (set): Set of job names that will run in the pipeline.
 
     Returns:
-        list: List of dependency errors, empty if no errors.
+        list: List of dependency error dictionaries with 'message' and 'is_optional' keys.
+              Empty list if no errors.
     """
     dependency_errors = []
 
@@ -157,10 +158,11 @@ def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[
                     needed_job_name = needed_job
 
                 if needed_job_name not in running_jobs:
-                    # Add [Optional] prefix for optional needs
-                    if is_optional:
-                        dependency_errors.append(f"[Optional] Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline")
-                    else:
-                        dependency_errors.append(f"Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline")
+                    # Create error dict with message and is_optional flag
+                    message = f"Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline"
+
+                    dependency_errors.append(
+                        {"message": message, "is_optional": is_optional}
+                    )
 
     return dependency_errors
