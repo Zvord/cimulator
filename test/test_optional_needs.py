@@ -24,19 +24,19 @@ class TestOptionalNeeds:
         # Should have two errors, one for each missing dependency
         assert len(errors) == 2
 
-        # Check that the optional need has the [Optional] prefix
-        optional_error = next((e for e in errors if "job3" in e), None)
+        # Check that the optional need has is_optional=True
+        optional_error = next((e for e in errors if "job3" in e["message"]), None)
         assert optional_error is not None
-        assert "[Optional]" in optional_error
-        assert "job2" in optional_error
-        assert "job3" in optional_error
+        assert optional_error["is_optional"] is True
+        assert "job2" in optional_error["message"]
+        assert "job3" in optional_error["message"]
 
-        # Check that the required need does NOT have the [Optional] prefix
-        required_error = next((e for e in errors if "job4" in e), None)
+        # Check that the required need has is_optional=False
+        required_error = next((e for e in errors if "job4" in e["message"]), None)
         assert required_error is not None
-        assert "[Optional]" not in required_error
-        assert "job2" in required_error
-        assert "job4" in required_error
+        assert required_error["is_optional"] is False
+        assert "job2" in required_error["message"]
+        assert "job4" in required_error["message"]
 
     def test_string_needs_not_affected(self):
         """Test that string needs (without optional field) are not affected."""
@@ -56,8 +56,8 @@ class TestOptionalNeeds:
         # Should have two errors, one for each missing dependency
         assert len(errors) == 2
 
-        # Check that neither error has the [Optional] prefix
+        # Check that neither error is optional
         for error in errors:
-            assert "[Optional]" not in error
-            assert "needs job" in error
-            assert "which will not run" in error
+            assert error["is_optional"] is False
+            assert "needs job" in error["message"]
+            assert "which will not run" in error["message"]

@@ -98,8 +98,8 @@ class TestValidator:
         running_jobs = {"job1", "job2", "job3"}  # job4 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
         assert len(errors) == 1
-        assert "needs job 'job4' which will not run" in errors[0]
-        assert "job3" in errors[0]
+        assert "needs job 'job4' which will not run" in errors[0]["message"]
+        assert "job3" in errors[0]["message"]
 
         # Test case: all needed jobs are running
         running_jobs = {"job1", "job2", "job3", "job4"}  # all jobs are running
@@ -115,8 +115,8 @@ class TestValidator:
         running_jobs = {"job1", "job2"}  # job3 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
         assert len(errors) == 1
-        assert "needs job 'job3' which will not run" in errors[0]
-        assert "job2" in errors[0]
+        assert "needs job 'job3' which will not run" in errors[0]["message"]
+        assert "job2" in errors[0]["message"]
 
         # Test case: job with complex needs format, some jobs won't run
         simulation_jobs = {
@@ -127,8 +127,8 @@ class TestValidator:
         running_jobs = {"job1", "job2"}  # job3 is not running
         errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
         assert len(errors) == 1
-        assert "needs job 'job3' which will not run" in errors[0]
-        assert "job2" in errors[0]
+        assert "needs job 'job3' which will not run" in errors[0]["message"]
+        assert "job2" in errors[0]["message"]
 
         # Test case: job with complex needs format, all needed jobs are running
         simulation_jobs = {
