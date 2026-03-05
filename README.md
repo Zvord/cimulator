@@ -27,10 +27,10 @@ Cimulator is a Python tool designed to validate and simulate GitLab CI pipelines
 pip install cimulator
 ```
 
-Or with Poetry:
+Or with uv:
 
 ```bash
-poetry add cimulator
+uv add cimulator
 ```
 
 ## Basic Usage
