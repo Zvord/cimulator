@@ -21,6 +21,7 @@ The project is structured as a Python package with a clear modular architecture 
 - ✅ Evaluating workflow rules to determine if a pipeline should run
 - ✅ Expanding variables in job definitions
 - ✅ Simulating pipeline execution based on configuration
+- ✅ CI/CD inputs: `spec:inputs` headers, `$[[ inputs.NAME ]]` interpolation (pipeline `--input` and `include:inputs`)
 
 ### Command-Line Interface
 - ✅ `validate` command for validating GitLab CI configuration
@@ -49,6 +50,7 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
+0. **CI/CD inputs**: `spec:inputs` header parsed (`inputs.py`), inputs validated (type/options/regex) and interpolated; `--input KEY=VALUE` CLI option
 1. **Script parsing bug fix**: Script lines with colons now parsed as strings, not dictionaries
 2. **Duplicate job detection**: Track job sources across files with validation warnings
 3. **Advanced `!reference` support**: Array flattening, cross-file references, complex scenarios

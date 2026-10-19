@@ -8,6 +8,7 @@ from typing import List, Optional, Union, Tuple, Set, NoReturn
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 from cimulator.types import ConfigDict, JobDict, JobSourcesDict
 from cimulator.loader import load_and_resolve
+from cimulator.inputs import parse_cli_inputs
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
 from cimulator.config import load_simulation_config
@@ -58,6 +59,12 @@ def main() -> None:
         help="Path to the output file (default: validation_output.yml)",
         default="validation_output.yml"
     )
+    validate_parser.add_argument(
+        "--input", "-i",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Value of a `spec:inputs` input of the CI file. Can be repeated"
+    )
 
     # 'simulate' subcommand: runs the simulation and saves the results to a file.
     simulate_parser = subparsers.add_parser("simulate", help="Simulate GitLab CI pipeline")
@@ -75,6 +82,12 @@ def main() -> None:
         help="Path to the output file (default: simulation_output.yml)",
         default="simulation_output.yml"
     )
+    simulate_parser.add_argument(
+        "--input", "-i",
+        action="append",
+        metavar="KEY=VALUE",
+        help="Value of a `spec:inputs` input of the CI file. Can be repeated"
+    )
 
     args = parser.parse_args()
 
@@ -90,7 +103,7 @@ def main() -> None:
 
     if args.command == "validate":
         try:
-            config, job_sources = load_and_resolve(args.ci_file)
+            config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input))
 
             # Extract jobs from the configuration
             reserved_keys = {"include", "workflow", "variables", "stages"}
@@ -128,7 +141,7 @@ def main() -> None:
     elif args.command == "simulate":
         try:
             # Load the GitLab CI configuration.
-            ci_config, job_sources = load_and_resolve(args.ci_file)
+            ci_config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input))
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
             # Also filter out non-dictionary values as they can't be valid jobs
