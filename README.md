@@ -13,6 +13,7 @@ Cimulator is a Python tool designed to validate and simulate GitLab CI pipelines
 - **Job Expansion**: Properly expands jobs according to the `extends` mechanism
 - **Rule Evaluation**: Evaluates workflow and job rules to determine which jobs would run
 - **Variable Interpolation**: Simulates how variables are expanded in different contexts
+- **CI/CD Inputs**: Supports `spec:inputs` headers and `$[[ inputs.NAME ]]` interpolation, for pipeline inputs and `include:inputs`
 - **Pipeline Simulation**: Provides a "dry run" of what a pipeline would look like
 
 ### Limitations
@@ -50,6 +51,20 @@ cimulator simulate path/to/your/.gitlab-ci.yml ci-config.yml profile
 
 To simulate you will need a CI config file, which contains profiles for your CI. Typically you need to specify
 there the source of the pipeline and additional variables that you set in Gitlab CI.
+
+### Inputs
+
+If the CI file starts with a `spec:inputs` header, the inputs are interpolated with their defaults. Pass other
+values with `--input` (or `-i`), as you would in the "Run pipeline" form:
+
+```bash
+cimulator simulate .gitlab-ci.yml ci-config.yml web --input version=1.2.0 --input tier=gold
+```
+
+Values are converted to the declared input type (`number`, `boolean`, `array` as YAML, e.g. `-i 'stages=[build, test]'`).
+Unknown or missing inputs, and values not matching `options` or `regex`, are errors, like in GitLab.
+Local includes with `inputs:` are interpolated the same way. The `expand_vars`, `posix_escape` and `truncate`
+functions are supported; `expand_vars` leaves the variables for the simulation to expand.
 
 ## Example
 

@@ -5,6 +5,7 @@ import yaml
 import logging
 from typing import List, Union, Optional, Tuple, Set, Any
 from cimulator.types import ConfigDict, JobDict, JobSourcesDict, JobOccurrencesDict
+from cimulator.inputs import InputsDict, InputsError, apply_inputs
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -155,17 +156,21 @@ def ensure_script_items_are_strings(config: ConfigDict) -> ConfigDict:
 
     return config
 
-def load_yaml(file_path: str) -> ConfigDict:
+def load_yaml(file_path: str, inputs: Optional[InputsDict] = None) -> ConfigDict:
     """
     Load a YAML file and return its contents as a dictionary.
     If the file is empty, return an empty dictionary.
     Uses a custom loader that supports GitLab CI-specific YAML tags.
 
+    If the file starts with a `spec:inputs` header, the header is dropped and
+    `$[[ inputs.NAME ]]` is interpolated from `inputs` and the declared defaults.
+
     Note: This function does NOT resolve !reference tags. References will be
     resolved later, after all includes are processed and jobs are expanded.
     """
     with open(file_path, 'r') as f:
-        document = yaml.load(f, Loader=GitLabCILoader) or {}
+        documents = list(yaml.load_all(f, Loader=GitLabCILoader))
+        document = apply_inputs(documents, inputs, file_path) or {}
         # Ensure all script items are strings
         document = ensure_script_items_are_strings(document)
         return document
@@ -269,16 +274,18 @@ def resolve_includes(config: ConfigDict, base_path: str,
     for inc in includes:
         try:
             # Determine the file path for the include.
+            include_inputs = None
             if isinstance(inc, str):
                 include_path = os.path.normpath(os.path.join(base_path, inc))
             elif isinstance(inc, dict) and "local" in inc:
                 include_path = os.path.normpath(os.path.join(base_path, inc["local"]))
+                include_inputs = inc.get("inputs")
             else:
                 # Unsupported include format, you might want to raise an error or skip.
                 continue
 
             # Load the included YAML file.
-            included_config = load_yaml(include_path)
+            included_config = load_yaml(include_path, include_inputs)
 
             # Recursively resolve includes in the included file.
             # Always use the root path for resolving nested includes
@@ -294,18 +301,22 @@ def resolve_includes(config: ConfigDict, base_path: str,
 
             # Merge the included configuration into the current configuration.
             merge_dicts(config, included_config)
+        except InputsError:
+            # Invalid inputs make the whole pipeline invalid in GitLab
+            raise
         except Exception as e:
             logger.warning(f"Error processing include {inc}: {e}")
             # Continue with other includes even if one fails
 
     return config
 
-def load_and_resolve(file_path: str) -> Tuple[ConfigDict, JobSourcesDict]:
+def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None) -> Tuple[ConfigDict, JobSourcesDict]:
     """
     Load the root YAML file and resolve all includes recursively.
 
     Parameters:
         file_path (str): Path to the root .gitlab-ci.yml file.
+        inputs (dict): Pipeline inputs for the root file's `spec:inputs` header.
 
     Returns:
         tuple: (resolved_config, job_sources)
@@ -316,7 +327,7 @@ def load_and_resolve(file_path: str) -> Tuple[ConfigDict, JobSourcesDict]:
     base_path = os.path.dirname(file_path)
     logger.info(f"Root file: {file_path}")
     logger.debug(f"Base path: {base_path}")
-    config = load_yaml(file_path)
+    config = load_yaml(file_path, inputs)
 
     # Initialize job_sources dictionary and all_jobs_occurrences
     job_sources: JobSourcesDict = {}
