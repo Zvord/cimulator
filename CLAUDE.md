@@ -27,3 +27,6 @@ memory-bank/
 ## Project Tools
 - **Poetry**: Dependency management (`poetry install`, `poetry run`)
 - **pytest**: Testing framework (`poetry run pytest`)
+
+## Git Conventions
+- Do not add a `Claude-Session:` trailer or session links to commits or PR descriptions.
