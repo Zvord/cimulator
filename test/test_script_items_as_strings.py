@@ -60,3 +60,47 @@ job1:
         # Clean up the temporary file
         if os.path.exists(ci_file_path):
             os.unlink(ci_file_path)
+
+
+def _load(tmp_path, content):
+    ci_file = tmp_path / ".gitlab-ci.yml"
+    ci_file.write_text(content)
+    ci_config, _ = load_and_resolve(str(ci_file))
+    return ci_config
+
+
+def test_nested_script_lists_are_flattened(tmp_path):
+    """Nested arrays in script sections are flattened, like GitLab does."""
+    ci_config = _load(tmp_path, """
+default:
+  before_script:
+    - [echo d1, [echo d2]]
+job1:
+  before_script:
+    - [echo b1, echo b2]
+  script:
+    - echo s1
+    - [echo s2, [echo s3, run: echo s4]]
+    - echo s5
+  after_script:
+    - [echo a1]
+""")
+    assert ci_config["default"]["before_script"] == ["echo d1", "echo d2"]
+    assert ci_config["job1"]["before_script"] == ["echo b1", "echo b2"]
+    assert ci_config["job1"]["script"] == ["echo s1", "echo s2", "echo s3", "run: echo s4", "echo s5"]
+    assert ci_config["job1"]["after_script"] == ["echo a1"]
+
+
+def test_reference_in_script_list_is_flattened(tmp_path):
+    """A !reference item in a script list is resolved and flattened, not stringified."""
+    ci_config = _load(tmp_path, """
+.setup:
+  script:
+    - echo setup1
+    - echo setup2
+job1:
+  script:
+    - !reference [.setup, script]
+    - echo main
+""")
+    assert ci_config["job1"]["script"] == ["echo setup1", "echo setup2", "echo main"]

@@ -110,9 +110,43 @@ def resolve_references(obj: Any, document: ConfigDict) -> Any:
         return obj.resolve(document)
     return obj
 
+SCRIPT_KEYS = ("before_script", "script", "after_script")
+
+def normalize_script_items(items: List[Any]) -> List[Any]:
+    """
+    Flatten nested lists of script items and convert the items to strings.
+
+    GitLab flattens nested arrays in script sections, e.g. the result of a
+    !reference or of an array input. ReferenceTag objects are kept as they are:
+    resolve_references flattens them into the list once they are resolved.
+
+    Raises:
+        ValueError: If a script item is a dictionary with more than one key-value pair.
+    """
+    result: List[Any] = []
+    for item in items:
+        if isinstance(item, list):
+            result.extend(normalize_script_items(item))
+        elif isinstance(item, (str, ReferenceTag)):
+            result.append(item)
+        elif isinstance(item, dict):
+            # PyYAML parses script lines with a colon, e.g. "run: echo", as dictionaries
+            if len(item) == 1:
+                # Convert dictionary to "key: value" string format
+                dict_key, dict_value = list(item.items())[0]
+                result.append(f"{dict_key}: {dict_value}")
+            else:
+                # If the dictionary has more than one key-value pair, it's an error
+                raise ValueError(f"Invalid script item: {item}. Script items must be strings, but found a dictionary with multiple key-value pairs.")
+        else:
+            # For other types, use string representation
+            result.append(str(item))
+    return result
+
 def ensure_script_items_are_strings(config: ConfigDict) -> ConfigDict:
     """
-    Ensure that all script items in job definitions are strings.
+    Ensure that all script items in job definitions and `default` are strings,
+    flattening nested lists of script items like GitLab does.
     This is necessary because PyYAML may parse items with colons as dictionaries.
 
     Args:
@@ -130,25 +164,11 @@ def ensure_script_items_are_strings(config: ConfigDict) -> ConfigDict:
 
     # Process each key-value pair in the config
     for key, value in config.items():
-        # If this is a job definition (not a reserved key) and it's a dictionary
-        if key not in {"include", "workflow", "variables", "stages", "default"} and isinstance(value, dict):
-            # If the job has a script section
-            if "script" in value and isinstance(value["script"], list):
-                # Process each script item
-                for i, item in enumerate(value["script"]):
-                    # If the item is not a string, convert it to a string
-                    if not isinstance(item, str):
-                        if isinstance(item, dict):
-                            if len(item) == 1:
-                                # Convert dictionary to "key: value" string format
-                                dict_key, dict_value = list(item.items())[0]
-                                value["script"][i] = f"{dict_key}: {dict_value}"
-                            else:
-                                # If the dictionary has more than one key-value pair, it's an error
-                                raise ValueError(f"Invalid script item: {item}. Script items must be strings, but found a dictionary with multiple key-value pairs.")
-                        else:
-                            # For other types, use string representation
-                            value["script"][i] = str(item)
+        # If this is a job definition or `default` (not another reserved key) and it's a dictionary
+        if key not in {"include", "workflow", "variables", "stages"} and isinstance(value, dict):
+            for script_key in SCRIPT_KEYS:
+                if isinstance(value.get(script_key), list):
+                    value[script_key] = normalize_script_items(value[script_key])
         # Recursively process nested dictionaries
         elif isinstance(value, dict):
             config[key] = ensure_script_items_are_strings(value)
