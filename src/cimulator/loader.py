@@ -111,6 +111,20 @@ def resolve_references(obj: Any, document: ConfigDict) -> Any:
         return obj.resolve(document)
     return obj
 
+# Top-level keywords of a GitLab CI configuration that are not jobs.
+# image, services, cache, before_script and after_script are the deprecated
+# global forms of the `default` keywords.
+GLOBAL_KEYWORDS = frozenset({
+    "default", "include", "stages", "variables", "workflow",
+    "image", "services", "cache", "before_script", "after_script",
+})
+
+
+def extract_jobs(config: ConfigDict) -> JobDict:
+    """Return the jobs of a configuration: its mappings that are not global keywords."""
+    return {k: v for k, v in config.items() if k not in GLOBAL_KEYWORDS and isinstance(v, dict)}
+
+
 SCRIPT_KEYS = ("before_script", "script", "after_script")
 
 def normalize_script_items(items: List[Any]) -> List[Any]:
@@ -230,9 +244,8 @@ def track_job_sources(config: ConfigDict, current_file: str,
     if all_job_occurrences is None:
         all_job_occurrences = {}
 
-    reserved_keys = {"include", "workflow", "variables", "stages", "default"}
     for key in config:
-        if key not in reserved_keys and isinstance(config[key], dict):
+        if key not in GLOBAL_KEYWORDS and isinstance(config[key], dict):
             # Record the source for all jobs, even if they've been seen before
             # This will ensure we have the most recent source for duplicate jobs
             job_sources[key] = current_file

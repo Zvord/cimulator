@@ -7,7 +7,7 @@ import traceback
 from typing import List, Optional, Union, Tuple, Set, NoReturn
 from logging import DEBUG, INFO, WARNING, ERROR, CRITICAL
 from cimulator.types import ConfigDict, JobDict, JobSourcesDict
-from cimulator.loader import load_and_resolve
+from cimulator.loader import load_and_resolve, extract_jobs
 from cimulator.inputs import parse_cli_inputs
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
@@ -106,8 +106,7 @@ def main() -> None:
             config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input))
 
             # Extract jobs from the configuration
-            reserved_keys = {"include", "workflow", "variables", "stages"}
-            jobs = {k: v for k, v in config.items() if k not in reserved_keys and isinstance(v, dict)}
+            jobs = extract_jobs(config)
 
             # Validate job dependencies
             validation_errors = validate_job_dependencies(jobs)
@@ -145,8 +144,7 @@ def main() -> None:
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
             # Also filter out non-dictionary values as they can't be valid jobs
-            reserved_keys = {"include", "workflow", "variables", "stages"}
-            jobs = {k: v for k, v in ci_config.items() if k not in reserved_keys and isinstance(v, dict)}
+            jobs = extract_jobs(ci_config)
 
             # Check for duplicate jobs
             duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
