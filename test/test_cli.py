@@ -96,3 +96,30 @@ MR-Push-Frozen:
         # Clean up the output file
         if os.path.exists(output_file):
             os.remove(output_file)
+
+
+def test_global_keywords_are_not_jobs(monkeypatch, tmp_path):
+    """default, and the deprecated global image/cache, are not simulated as jobs."""
+    ci_file = tmp_path / ".gitlab-ci.yml"
+    ci_file.write_text("""
+default:
+  before_script:
+    - echo setup
+image:
+  name: alpine
+cache:
+  paths: [vendor/]
+job1:
+  script: "echo hello"
+""")
+    config_file = tmp_path / "profiles.yml"
+    config_file.write_text("profile:\n  CI_PIPELINE_SOURCE: push\n")
+    output_file = tmp_path / "simulation_output.yml"
+
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(ci_file), str(config_file), "profile",
+                                     "--output", str(output_file)])
+    main()
+
+    simulation = yaml.safe_load(output_file.read_text())
+    assert simulation["jobs_list"] == ["job1"]
+    assert set(simulation["jobs"]) == {"job1"}
