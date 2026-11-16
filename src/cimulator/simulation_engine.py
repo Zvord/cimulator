@@ -1,7 +1,7 @@
 import logging
 from typing import List, Set, Tuple, Optional, Union
 from cimulator.types import JobDict, ConfigDict, VariablesDict
-from cimulator.job_expander import expand_all_jobs
+from cimulator.job_expander import expand_pipeline_jobs
 from cimulator.workflow import evaluate_workflow, evaluate_rules
 from cimulator.variable_expander import expand_variables
 from cimulator.validator import validate_job_needs_dependencies
@@ -49,8 +49,9 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
     simulation_variables.update(wf_vars)
     logger.debug(f"Global variables after merging workflow variables: {simulation_variables}")
 
-    # Expand all job definitions.
-    expanded_jobs = expand_all_jobs(all_jobs)
+    # Expand all job definitions, then split parallel:matrix jobs into one job
+    # per matrix combination.
+    expanded_jobs, matrix_instances = expand_pipeline_jobs(all_jobs)
     simulation_jobs = {}
 
     # Process jobs in a deterministic order to ensure dependencies are handled correctly
@@ -108,6 +109,10 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
 
         # Expand all variables in the job definition.
         expanded_job = expand_variables(job_with_expanded_variables, job_simulation_variables)
+        # GitLab does not expand variables in needs: they name jobs as
+        # written, e.g. a matrix job with a variable in a matrix value
+        if "needs" in job:
+            expanded_job["needs"] = job["needs"]
         simulation_jobs[job_name] = expanded_job
         logger.debug(f"Final expanded job '{job_name}': {expanded_job}")
 
@@ -122,7 +127,7 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
 
     # Check for needs dependencies on jobs that won't run
     running_jobs = set(jobs_list)
-    dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs)
+    dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs, matrix_instances)
 
     # Include all expanded jobs (including template jobs) for debugging
     # TODO rewrite this AI garbage

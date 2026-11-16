@@ -180,3 +180,90 @@ class TestValidator:
         errors = validate_job_dependencies(jobs)
         # Should not report an error for template jobs
         assert len(errors) == 0
+
+
+class TestValidateExpansionErrors:
+    """A job that cannot be expanded is reported without stopping validation."""
+
+    def test_circular_extends(self):
+        jobs = {
+            ".a": {"extends": ".b"},
+            ".b": {"extends": ".a"},
+            "job": {"extends": ".a", "script": ["x"]},
+            "other": {"script": ["x"], "needs": ["missing"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Circular dependency detected: .a -> .b -> .a",
+            "Job 'other' needs non-existing job 'missing'",
+        ]
+
+    def test_circular_extends_is_reported_once(self):
+        jobs = {
+            "b": {"extends": "c", "script": ["x"]},
+            "c": {"extends": "a", "script": ["x"]},
+            "a": {"extends": "b", "script": ["x"]},
+            "d": {"extends": "c", "script": ["x"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Circular dependency detected: a -> b -> c -> a",
+        ]
+
+    def test_missing_grandparent(self):
+        jobs = {
+            ".a": {"extends": ".missing"},
+            "job": {"extends": ".a", "script": ["x"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Job '.a' extends non-existing job '.missing'",
+        ]
+
+    def test_parent_is_not_a_mapping(self):
+        jobs = {".a": "not a job", "job": {"extends": ".a", "script": ["x"]}}
+        assert validate_job_dependencies(jobs) == [
+            "Job definition for '.a' is not a dictionary: str",
+        ]
+
+    def test_unused_broken_template_is_not_reported(self):
+        jobs = {".a": {"extends": ".missing"}, "job": {"script": ["x"]}}
+        assert validate_job_dependencies(jobs) == []
+
+    def test_extends_and_needs_errors_are_reported_together(self):
+        jobs = {
+            "job": {"extends": "missing", "script": ["x"], "needs": ["also_missing"]},
+            "other": {"script": ["x"], "needs": ["nope"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Job 'job' extends non-existing job 'missing'",
+            "Job 'job' needs non-existing job 'also_missing'",
+            "Job 'other' needs non-existing job 'nope'",
+        ]
+
+    def test_need_that_is_not_a_string(self):
+        jobs = {"job": {"script": ["x"], "needs": [None]}}
+        assert validate_job_dependencies(jobs) == ["Job 'job' needs non-existing job 'None'"]
+
+    def test_broken_template_is_reported_once(self):
+        jobs = {
+            ".a": {"extends": ".missing"},
+            "b": {"extends": ".a", "script": ["x"]},
+            "c": {"extends": ".a", "script": ["x"]},
+            "x": {"extends": "gone", "script": ["x"]},
+            "y": {"extends": "x", "script": ["x"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Job 'x' extends non-existing job 'gone'",
+            "Job '.a' extends non-existing job '.missing'",
+        ]
+
+    def test_job_with_missing_parent_still_has_its_other_errors_reported(self):
+        jobs = {
+            "job": {"extends": "missing", "script": ["x"],
+                    "parallel": {"matrix": [{"A": ["x"]}]},
+                    "needs": ["c: [$[[ matrix.Z ]]]", "nope"]},
+            "c": {"script": ["x"]},
+        }
+        assert validate_job_dependencies(jobs) == [
+            "Job 'job' extends non-existing job 'missing'",
+            "Job 'job': 'Z' does not exist in its matrix configuration",
+            "Job 'job' needs non-existing job 'nope'",
+        ]
