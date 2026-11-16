@@ -8,6 +8,8 @@ focusing on job dependencies and relationships.
 import logging
 from typing import List, Set, Optional, Union
 from cimulator.types import JobDict, JobSourcesDict
+from cimulator.job_expander import expand_pipeline_jobs
+from cimulator.matrix import MatrixInstancesDict
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -93,8 +95,23 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
                 if parent_name not in all_jobs:
                     errors.append(f"Job '{job_name}' extends non-existing job '{parent_name}'")
 
+    # The needs are checked on the jobs as GitLab creates them: with their
+    # extends expanded and their parallel:matrix split into one job per
+    # combination. A job that cannot be expanded is reported and its own
+    # definition is checked instead; an invalid need is reported and dropped.
+    # Template jobs are not expanded: they do not run, so they may extend
+    # anything.
+    jobs, matrix_instances = expand_pipeline_jobs(
+        all_jobs, skip_templates=True, on_error=lambda job_name, error: errors.append(error))
+
+    # Errors name a matrix job as written, not each of its jobs, so that a
+    # need missing in every combination is one error
+    written_names = {instance: matrix_job
+                     for matrix_job, instances in matrix_instances.items()
+                     for instance in instances}
+
     # Check for needs dependencies (skip template jobs)
-    for job_name, job in all_jobs.items():
+    for job_name, job in jobs.items():
         # Skip validation for template jobs (starting with a dot)
         if job_name.startswith('.'):
             continue
@@ -116,18 +133,26 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
                     needed_job_name = needed_job
 
                 # Consider template jobs as non-existing since they won't run
-                if needed_job_name not in all_jobs or needed_job_name.startswith('.'):
-                    errors.append(f"Job '{job_name}' needs non-existing job '{needed_job_name}'")
+                if not isinstance(needed_job_name, str) or needed_job_name.startswith('.') or (
+                        needed_job_name not in jobs and needed_job_name not in matrix_instances):
+                    errors.append(f"Job '{written_names.get(job_name, job_name)}' "
+                                  f"needs non-existing job '{needed_job_name}'")
 
-    return errors
+    # The same error is found once per job that extends the same broken
+    # template, or once per job of a matrix job: report it once
+    return list(dict.fromkeys(errors))
 
-def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str]) -> List[dict]:
+def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str],
+                                    matrix_instances: Optional[MatrixInstancesDict] = None) -> List[dict]:
     """
     Validate that all jobs needed by running jobs are also running.
 
     Parameters:
         simulation_jobs (dict): Dictionary of expanded job definitions.
         running_jobs (set): Set of job names that will run in the pipeline.
+        matrix_instances (dict, optional): Names of the jobs each parallel:matrix
+            job expands to. Needing a matrix job by its own name needs every
+            one of them, as in GitLab; a matrix job with none is ignored.
 
     Returns:
         list: List of dependency error dictionaries with 'message' and 'is_optional' keys.
@@ -157,12 +182,17 @@ def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[
                 else:
                     needed_job_name = needed_job
 
-                if needed_job_name not in running_jobs:
-                    # Create error dict with message and is_optional flag
-                    message = f"Job '{job_name}' needs job '{needed_job_name}' which will not run in this pipeline"
+                # A matrix job by its own name: each of its jobs is needed
+                for needed_name in (matrix_instances or {}).get(needed_job_name, [needed_job_name]):
+                    if needed_name not in running_jobs:
+                        # Create error dict with message and is_optional flag
+                        message = f"Job '{job_name}' needs job '{needed_name}' which will not run in this pipeline"
 
-                    dependency_errors.append(
-                        {"message": message, "is_optional": is_optional}
-                    )
+                        dependency_errors.append(
+                            {"message": message, "is_optional": is_optional}
+                        )
 
-    return dependency_errors
+    # The same job can be needed twice, e.g. a matrix job by its own name and
+    # one of its jobs: report it once
+    unique = {(e["message"], e["is_optional"]): e for e in dependency_errors}
+    return list(unique.values())

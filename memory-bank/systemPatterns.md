@@ -40,8 +40,15 @@ flowchart TD
 - **Responsibility**: Expands job definitions using the "extends" mechanism.
 - **Key Functions**:
   - `expand_job()`: Recursively expands a job definition.
-  - `expand_all_jobs()`: Expands all job definitions in a configuration.
+  - `expand_all_jobs()`: Expands all job definitions in a configuration; optionally skips templates and reports errors through a callback instead of raising.
+  - `expand_pipeline_jobs()`: The jobs as GitLab creates them: `extends` expanded, then `parallel:matrix` split (see the Matrix module). Used by both `simulate` and `validate`.
 - **Design Pattern**: Decorator pattern for building up job definitions.
+
+### 2b. Matrix Module (`matrix.py`)
+- **Responsibility**: `parallel:matrix` support.
+- **Key Functions**:
+  - `expand_matrix_jobs()`: Replaces each matrix job with one job per combination (`job: [v1, v2]`, matrix values as job variables) and resolves matrix needs; returns the jobs and the instances of each matrix job, so a need on the matrix job's own name is satisfied by any of them.
+  - `expand_matrix_needs()`: Resolves `needs:parallel:matrix` and `$[[ matrix.NAME ]]`.
 
 ### 3. Workflow Module
 - **Responsibility**: Evaluates workflow rules to determine if a pipeline should run.
@@ -97,12 +104,12 @@ flowchart TD
 
 3. **Validation** (for validate command):
    - Extract job definitions.
-   - Validator module checks for jobs that extend or need non-existing jobs.
+   - Validator module checks for jobs that extend non-existing jobs, then checks needs on the jobs from `expand_pipeline_jobs()`; jobs that cannot be expanded are reported as errors, and their own definition is checked instead.
    - If validation errors are found, the process exits with an error code.
 
 4. **Job Extraction & Expansion** (for simulate command):
    - Extract job definitions.
-   - Expand jobs by processing extends entries with the job expander module.
+   - Expand jobs by processing extends entries with the job expander module, then split `parallel:matrix` jobs (`expand_pipeline_jobs()`).
 
 5. **Workflow Processing**:
    - Parse the workflow section and evaluate it based on the configuration manager's variable values.

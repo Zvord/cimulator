@@ -14,6 +14,7 @@ Cimulator is a Python tool designed to validate and simulate GitLab CI pipelines
 - **Rule Evaluation**: Evaluates workflow and job rules to determine which jobs would run
 - **Variable Interpolation**: Simulates how variables are expanded in different contexts
 - **CI/CD Inputs**: Supports `spec:inputs` headers and `$[[ inputs.NAME ]]` interpolation, for pipeline inputs and `include:inputs`
+- **Parallel Matrix**: Jobs with `parallel:matrix` run once per combination (`job: [value1, value2]`), with the matrix variables visible to their rules; `needs` resolve `needs:parallel:matrix` and `$[[ matrix.NAME ]]` expressions
 - **Pipeline Simulation**: Provides a "dry run" of what a pipeline would look like
 
 ### Limitations
