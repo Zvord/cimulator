@@ -1,5 +1,6 @@
 import pytest
 from cimulator.validator import validate_job_dependencies, validate_job_needs_dependencies
+from cimulator.simulation_engine import simulate_pipeline
 
 class TestValidator:
     def test_validate_job_dependencies_extends(self):
@@ -267,3 +268,77 @@ class TestValidateExpansionErrors:
             "Job 'job': 'Z' does not exist in its matrix configuration",
             "Job 'job' needs non-existing job 'nope'",
         ]
+
+
+class TestExternalNeeds:
+    """Needs on jobs of other pipelines cannot be checked offline: skip them."""
+
+    JOBS = {
+        "a": {"script": ["x"]},
+        "c": {
+            "script": ["x"],
+            "needs": [
+                "a",
+                {"project": "group/other-project", "job": "build", "ref": "main", "artifacts": True},
+                {"pipeline": "$PARENT_PIPELINE_ID", "job": "generate"},
+                "missing",
+            ],
+        },
+    }
+
+    def test_validate(self):
+        assert validate_job_dependencies(self.JOBS) == ["Job 'c' needs non-existing job 'missing'"]
+
+    def test_simulate(self):
+        errors = validate_job_needs_dependencies(self.JOBS, {"a", "c"})
+        assert errors == [{
+            "message": "Job 'c' needs job 'missing' which will not run in this pipeline",
+            "is_optional": False,
+        }]
+
+    def test_matrix_expression_in_the_job_of_another_project(self):
+        # GitLab accepts it, even in a job without a matrix: the job is
+        # named as in the other project
+        jobs = {"c": {"script": ["x"], "needs": [
+            {"project": "group/other-project", "job": "build $[[ matrix.A ]]", "ref": "main"}]}}
+        assert validate_job_dependencies(jobs) == []
+        summary = simulate_pipeline(jobs, {}, {})
+        assert summary["jobs_list"] == ["c"]
+        assert summary["dependency_errors"] == []
+
+    @pytest.mark.parametrize("need", [
+        {"project": "group/other-project", "ref": "main"},
+        {"pipeline": "$PARENT_PIPELINE_ID", "job": None},
+        {"project": "group/other-project", "job": 1, "ref": "main"},
+        {"artifacts": True},
+        {"job": None},
+    ])
+    def test_need_without_a_job_name_is_an_error(self, need):
+        # As GitLab: "need job should be a string"
+        jobs = {"c": {"script": ["x"], "needs": [need]}}
+        assert validate_job_dependencies(jobs) == [f"Job 'c' has a need without a job name: {need}"]
+
+    def test_pipeline_need_without_a_job_in_a_trigger_job(self):
+        # As GitLab: the status of an upstream pipeline, valid only in a
+        # trigger job ("needs config uses invalid types: bridge" otherwise)
+        need = {"pipeline": "group/other-project"}
+        trigger = {"t": {"trigger": "group/downstream", "needs": [need]}}
+        assert validate_job_dependencies(trigger) == []
+        assert simulate_pipeline(trigger, {}, {})["dependency_errors"] == []
+        assert validate_job_dependencies({"c": {"script": ["x"], "needs": [need]}}) == [
+            f"Job 'c' needs a pipeline without a job, which only a trigger job can: {need}"]
+
+    def test_trigger_job_cannot_need_a_job_of_another_pipeline(self):
+        # GitLab: "needs config uses invalid types: cross_dependency"
+        need = {"pipeline": "group/other-project", "job": "build"}
+        jobs = {"t": {"trigger": "group/downstream", "needs": [need]}}
+        assert validate_job_dependencies(jobs) == [
+            f"Job 't' is a trigger job, which cannot need a job of another pipeline: {need}"]
+
+    @pytest.mark.parametrize("optional", [True, "x"])
+    def test_optional_is_not_allowed_in_a_need_of_another_project(self, optional):
+        # GitLab: "need config contains unknown keys: optional", even for true
+        need = {"project": "group/other-project", "job": "build", "ref": "main", "optional": optional}
+        jobs = {"c": {"script": ["x"], "needs": [need]}}
+        assert validate_job_dependencies(jobs) == [
+            f"Job 'c' needs a job of another pipeline with optional, which GitLab does not allow: {need}"]

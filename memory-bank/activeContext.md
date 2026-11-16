@@ -4,6 +4,7 @@
 Enhanced GitLab CI `!reference` tag support with array flattening capabilities for rules that reference other rule arrays. Recently focused on validation improvements and duplicate job detection.
 
 ## Recent Changes
+- **Needs of other pipelines**: `needs:project` and `needs:pipeline` are skipped by the needs checks; their form is checked as GitLab does
 - **Include merge order**: the including file now overrides its includes, as in GitLab; duplicate job warnings name the definition that wins, each file once, and leave out overridden templates
 - **Condition evaluator as in GitLab**: `rules:if` expressions parsed with GitLab's semantics (null, `!`, regex flags and variables, Ruby-like `&&`/`||`), no `eval`; invalid expressions are errors, checked in every rule as GitLab does; variables written as mappings have their value
 - **Local includes as in GitLab**: Missing or invalid includes are errors; `include:rules` and variables in include paths evaluated with the profile variables; paths matched against the files GitLab sees

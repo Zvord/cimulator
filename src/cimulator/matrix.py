@@ -83,6 +83,14 @@ def expand_matrix_expressions(value: str, combination: MatrixCombination, job_na
     return MATRIX_EXPRESSION.sub(replace, value)
 
 
+def is_external_need(need: object) -> bool:
+    """
+    Whether a needs entry is on a job of another pipeline: of another project
+    (needs:project) or of the parent pipeline (needs:pipeline). Those jobs are
+    not in this configuration, so they cannot be checked offline.
+    """
+    return isinstance(need, dict) and ('project' in need or 'pipeline' in need)
+
 def expand_matrix_needs(needs: Any, combination: Optional[MatrixCombination], job_name: str,
                         on_error: Optional[ErrorHandler] = None) -> Any:
     """
@@ -114,6 +122,10 @@ def expand_matrix_needs(needs: Any, combination: Optional[MatrixCombination], jo
     def expand_need(need: Any) -> List[Any]:
         if not isinstance(need, dict):
             return [expand(need)]
+        # The job of another pipeline is named as written there: GitLab
+        # accepts any name, even with a matrix expression
+        if is_external_need(need):
+            return [need]
 
         need = copy.deepcopy(need)
         if "job" in need:

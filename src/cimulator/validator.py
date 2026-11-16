@@ -9,12 +9,34 @@ import logging
 from typing import List, Set, Optional, Union
 from cimulator.expression import ExpressionError
 from cimulator.job_expander import expand_job, expand_pipeline_jobs
-from cimulator.matrix import MatrixInstancesDict
+from cimulator.matrix import MatrixInstancesDict, is_external_need
 from cimulator.types import ConfigDict, JobDict, JobSourcesDict
 from cimulator.workflow import check_condition, rules_list
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
+
+def external_need_error(need: dict, job: object) -> Optional[str]:
+    """
+    Why GitLab rejects a need of another pipeline (see is_external_need()) in
+    `job`, if it does:
+    - `needs:pipeline` without a job (the status of an upstream pipeline) is
+      only valid in a trigger job, and a trigger job cannot need a job of
+      another pipeline ("needs config uses invalid types");
+    - any other need must name a job ("need job should be a string");
+    - `optional` is not allowed ("need config contains unknown keys").
+    """
+    trigger = isinstance(job, dict) and 'trigger' in job
+    has_job = isinstance(need.get('job'), str)
+    if 'pipeline' in need and not has_job and 'job' not in need:
+        return None if trigger else "needs a pipeline without a job, which only a trigger job can"
+    if not has_job:
+        return "has a need without a job name"
+    if trigger:
+        return "is a trigger job, which cannot need a job of another pipeline"
+    if 'optional' in need:
+        return "needs a job of another pipeline with optional, which GitLab does not allow"
+    return None
 
 def detect_duplicate_jobs(all_jobs: JobDict, job_sources: Optional[JobSourcesDict] = None) -> List[str]:
     """
@@ -133,21 +155,28 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
                 needs_field = [needs_field]
 
             for needed_job in needs_field:
+                shown_name = written_names.get(job_name, job_name)
+                # The needs of other pipelines cannot be checked offline, only
+                # how they are written
+                if is_external_need(needed_job):
+                    error = external_need_error(needed_job, job)
+                    if error:
+                        errors.append(f"Job '{shown_name}' {error}: {needed_job}")
+                    continue
+                # As GitLab: "need job should be a string"
+                if isinstance(needed_job, dict) and not isinstance(needed_job.get('job'), str):
+                    errors.append(f"Job '{shown_name}' has a need without a job name: {needed_job}")
+                    continue
                 # Handle both simple format (string) and complex format (dict with 'job' key)
                 if isinstance(needed_job, dict):
-                    if 'job' in needed_job:
-                        needed_job_name = needed_job['job']
-                    else:
-                        # Skip if the dictionary doesn't have a 'job' key
-                        continue
+                    needed_job_name = needed_job['job']
                 else:
                     needed_job_name = needed_job
 
                 # Consider template jobs as non-existing since they won't run
                 if not isinstance(needed_job_name, str) or needed_job_name.startswith('.') or (
                         needed_job_name not in jobs and needed_job_name not in matrix_instances):
-                    errors.append(f"Job '{written_names.get(job_name, job_name)}' "
-                                  f"needs non-existing job '{needed_job_name}'")
+                    errors.append(f"Job '{shown_name}' needs non-existing job '{needed_job_name}'")
 
     # The same error is found once per job that extends the same broken
     # template, or once per job of a matrix job: report it once
@@ -221,6 +250,8 @@ def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[
                 needs_field = [needs_field]
 
             for needed_job in needs_field:
+                if is_external_need(needed_job):
+                    continue
                 # Handle both simple format (string) and complex format (dict with 'job' key)
                 is_optional = False
                 if isinstance(needed_job, dict):
