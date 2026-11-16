@@ -61,11 +61,11 @@ job1:
     # Create a simulation configuration file with profiles.
     # This is your provided example.
     sim_content = """
-Nightly-Main:
+Nightly-Product:
   CI_PIPELINE_SOURCE: "schedule"
-  RUN_NIGHTLY_CUSTOMER_BRANCH: "1"
+  RUN_NIGHTLY_EXTRAS: "1"
 
-MR-Push-Frozen:
+MR-Push-Object:
   CI_PIPELINE_SOURCE: "merge_request_event"
   CI_MERGE_REQUEST_EVENT_TYPE: ""
   CI_MERGE_REQUEST_TARGET_BRANCH_NAME: "master"
@@ -73,9 +73,9 @@ MR-Push-Frozen:
     sim_file = create_temp_file(sim_content)
     output_file = "test_simulation_output.yml"
 
-    # The new CLI expects an additional profile argument, e.g., "Nightly-Main".
+    # The new CLI expects an additional profile argument, e.g., "Nightly-Product".
     # Simulate command-line arguments for the 'simulate' subcommand with output file.
-    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", ci_file, sim_file, "Nightly-Main", "--output", output_file])
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", ci_file, sim_file, "Nightly-Product", "--output", output_file])
     try:
         main()
         # Check if the success message is printed to stdout
@@ -87,9 +87,9 @@ MR-Push-Frozen:
         assert os.path.exists(output_file)
         with open(output_file, 'r') as f:
             content = f.read()
-            # We expect that the simulation summary reflects the global variables from the "Nightly-Avispado" profile.
-            # For instance, RUN_NIGHTLY_CUSTOMER_BRANCH should be set to "1".
-            assert "RUN_NIGHTLY_CUSTOMER_BRANCH: '1'" in content or 'RUN_NIGHTLY_CUSTOMER_BRANCH: "1"' in content
+            # We expect that the simulation summary reflects the global variables from the "Nightly-Product" profile.
+            # For instance, RUN_NIGHTLY_EXTRAS should be set to "1".
+            assert "RUN_NIGHTLY_EXTRAS: '1'" in content or 'RUN_NIGHTLY_EXTRAS: "1"' in content
     finally:
         os.remove(ci_file)
         os.remove(sim_file)
@@ -123,3 +123,117 @@ job1:
     simulation = yaml.safe_load(output_file.read_text())
     assert simulation["jobs_list"] == ["job1"]
     assert set(simulation["jobs"]) == {"job1"}
+
+
+def test_simulate_cli_includes_use_the_profile_variables(monkeypatch, tmp_path):
+    (tmp_path / "ci").mkdir()
+    (tmp_path / "ci" / "push.yml").write_text("push_job:\n  script: [echo]\n")
+    (tmp_path / ".gitlab-ci.yml").write_text(
+        "include:\n"
+        "  - local: ci/$CI_PIPELINE_SOURCE.yml\n"
+        "    rules:\n"
+        "      - if: $CI_PIPELINE_SOURCE == \"push\"\n"
+        "job:\n  script: [echo]\n"
+    )
+    (tmp_path / "profiles.yml").write_text(
+        "push:\n  CI_PIPELINE_SOURCE: push\nweb:\n  CI_PIPELINE_SOURCE: web\n")
+    for profile, expected in (("push", ["job", "push_job"]), ("web", ["job"])):
+        output = tmp_path / f"{profile}.yml"
+        monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                         str(tmp_path / "profiles.yml"), profile, "--output", str(output)])
+        main()
+        assert sorted(yaml.safe_load(output.read_text())["jobs_list"]) == expected
+
+
+def test_simulate_cli_with_an_empty_profile(monkeypatch, tmp_path):
+    (tmp_path / ".gitlab-ci.yml").write_text("job:\n  script: [echo]\n")
+    (tmp_path / "profiles.yml").write_text("empty:\n")
+    output = tmp_path / "out.yml"
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "empty", "--output", str(output)])
+    main()
+    assert yaml.safe_load(output.read_text())["jobs_list"] == ["job"]
+
+
+def test_simulate_cli_profile_values_are_strings(monkeypatch, tmp_path):
+    # YAML gives true and 1 as a boolean and a number; GitLab's values are the text
+    (tmp_path / "ci").mkdir()
+    (tmp_path / "ci" / "true.yml").write_text("flag_job:\n  script: [echo]\n")
+    (tmp_path / ".gitlab-ci.yml").write_text(
+        "include: ci/$FLAG.yml\n"
+        "job:\n  script: [echo]\n  rules:\n    - if: $FLAG == \"true\" && $COUNT == \"1\"\n"
+    )
+    (tmp_path / "profiles.yml").write_text("p:\n  FLAG: true\n  COUNT: 1\n")
+    output = tmp_path / "out.yml"
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(output)])
+    main()
+    assert sorted(yaml.safe_load(output.read_text())["jobs_list"]) == ["flag_job", "job"]
+
+
+@pytest.mark.parametrize("profiles, error", [
+    ("p:\n  - CI\n", "Profile 'p' must be a mapping of variables, not a list"),
+    ("p:\n  X: {a: 1}\n", "Profile 'p': the value of X must be text, a number or a boolean, not a dict"),
+    ("p:\n  X: [1]\n", "Profile 'p': the value of X must be text, a number or a boolean, not a list"),
+])
+def test_simulate_cli_invalid_profile_fails(monkeypatch, tmp_path, capsys, profiles, error):
+    (tmp_path / ".gitlab-ci.yml").write_text("job:\n  script: [echo]\n")
+    (tmp_path / "profiles.yml").write_text(profiles)
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(tmp_path / "out.yml")])
+    with pytest.raises(SystemExit):
+        main()
+    assert error in capsys.readouterr().err
+
+
+def test_simulate_cli_simulation_config_that_is_not_a_mapping_fails(monkeypatch, tmp_path, capsys):
+    (tmp_path / ".gitlab-ci.yml").write_text("job:\n  script: [echo]\n")
+    (tmp_path / "profiles.yml").write_text("- p\n")
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(tmp_path / "out.yml")])
+    with pytest.raises(SystemExit):
+        main()
+    assert "must be a mapping of profiles, not a list" in capsys.readouterr().err
+
+
+def test_simulate_cli_profile_values_are_kept_as_written(monkeypatch, tmp_path):
+    # Not retyped by YAML: 1.10 is not 1.1, 010 not 8, 1:30 not 90, yes not true
+    (tmp_path / ".gitlab-ci.yml").write_text(
+        "job:\n  script: [echo]\n  rules:\n"
+        "    - if: $V == \"1.10\" && $O == \"010\" && $T == \"1:30\" && $Y == \"yes\" && $E == \"\"\n"
+    )
+    (tmp_path / "profiles.yml").write_text("p:\n  V: 1.10\n  O: 010\n  T: 1:30\n  Y: yes\n  E:\n")
+    output = tmp_path / "out.yml"
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(output)])
+    main()
+    assert yaml.safe_load(output.read_text())["jobs_list"] == ["job"]
+
+
+@pytest.mark.parametrize("empty", ["", " ~", " null"])
+def test_simulate_cli_empty_profile_written_as_null(monkeypatch, tmp_path, empty):
+    (tmp_path / ".gitlab-ci.yml").write_text("job:\n  script: [echo]\n")
+    (tmp_path / "profiles.yml").write_text(f"p:{empty}\n")
+    output = tmp_path / "out.yml"
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(output)])
+    main()
+    assert yaml.safe_load(output.read_text())["jobs_list"] == ["job"]
+
+
+def test_simulate_cli_profile_anchors_and_null_values(monkeypatch, tmp_path):
+    # << merges apply; null and ~ are empty values, not the text null
+    (tmp_path / "ci").mkdir()
+    (tmp_path / "ci" / "a.yml").write_text("a_job:\n  script: [echo]\n")
+    (tmp_path / ".gitlab-ci.yml").write_text(
+        "include: ci/a$N.yml\n"
+        "job:\n  script: [echo]\n  rules:\n"
+        "    - if: $A == \"1.10\" && $B == \"yes\" && $N == \"\" && $T == \"\"\n"
+    )
+    (tmp_path / "profiles.yml").write_text(
+        "common: &common\n  A: 1.10\n  N: null\np:\n  <<: *common\n  B: yes\n  T: ~\n")
+    output = tmp_path / "out.yml"
+    monkeypatch.setattr("sys.argv", ["cli.py", "simulate", str(tmp_path / ".gitlab-ci.yml"),
+                                     str(tmp_path / "profiles.yml"), "p", "--output", str(output)])
+    main()
+    assert sorted(yaml.safe_load(output.read_text())["jobs_list"]) == ["a_job", "job"]

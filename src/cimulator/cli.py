@@ -11,7 +11,7 @@ from cimulator.loader import load_and_resolve, extract_jobs
 from cimulator.inputs import parse_cli_inputs
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
-from cimulator.config import load_simulation_config
+from cimulator.config import load_simulation_config, profile_variables
 from cimulator.validator import validate_job_dependencies, detect_duplicate_jobs
 
 def setup_logging(level: int) -> None:
@@ -139,8 +139,18 @@ def main() -> None:
 
     elif args.command == "simulate":
         try:
-            # Load the GitLab CI configuration.
-            ci_config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input))
+            # Load simulation configuration (global variables etc.)
+            sim_config = load_simulation_config(args.simulation_config)
+            # Get the variables from the specified profile
+            if args.profile not in sim_config:
+                raise ValueError(f"'{args.profile}' is not a valid key in the simulation configuration file. Expected keys: {list(sim_config.keys())}")
+            # As strings, as GitLab variables are; an empty profile has none
+            profile_vars = profile_variables(sim_config.get(args.profile), args.profile)
+
+            # Load the GitLab CI configuration. Includes use the profile
+            # variables in their path and rules, as GitLab uses the
+            # predefined, project and pipeline variables there.
+            ci_config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input), profile_vars)
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
             # Also filter out non-dictionary values as they can't be valid jobs
@@ -154,13 +164,6 @@ def main() -> None:
 
             # Get global variables from the GitLab CI file
             gitlab_vars = ci_config.get("variables", {})
-
-            # Load simulation configuration (global variables etc.)
-            sim_config = load_simulation_config(args.simulation_config)
-            # Get the variables from the specified profile
-            if args.profile not in sim_config:
-                raise ValueError(f"'{args.profile}' is not a valid key in the simulation configuration file. Expected keys: {list(sim_config.keys())}")
-            profile_vars = sim_config.get(args.profile, {})
 
             # Merge GitLab CI variables with profile variables
             # Profile variables take precedence over GitLab CI variables

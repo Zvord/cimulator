@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 
 import os
+import re
 import yaml
 import logging
-from typing import List, Union, Optional, Tuple, Set, Any
-from cimulator.types import ConfigDict, JobDict, JobSourcesDict, JobOccurrencesDict
+from typing import List, Union, Optional, Tuple, Set, Any, Iterator
+from cimulator.types import ConfigDict, JobDict, JobSourcesDict, JobOccurrencesDict, VariablesDict
 from cimulator.inputs import InputsDict, InputsError, apply_inputs
+from cimulator.variable_expander import expand_variables_in_string
+from cimulator.workflow import evaluate_condition
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -204,7 +207,11 @@ def load_yaml(file_path: str, inputs: Optional[InputsDict] = None) -> ConfigDict
     """
     with open(file_path, 'r') as f:
         documents = list(yaml.load_all(f, Loader=GitLabCILoader))
-        document = apply_inputs(documents, inputs, file_path) or {}
+        document = apply_inputs(documents, inputs, file_path)
+        # Only a file without content is an empty configuration: other values,
+        # e.g. [] or false, are kept for the caller to reject
+        if document is None:
+            document = {}
         # Ensure all script items are strings
         document = ensure_script_items_are_strings(document)
         return document
@@ -256,11 +263,295 @@ def track_job_sources(config: ConfigDict, current_file: str,
                 all_job_occurrences[key] = []
             all_job_occurrences[key].append(current_file)
 
+def matches_no_file(path: str) -> bool:
+    """
+    Whether a path can match no file of the repository, as GitLab sees it:
+    it has an empty, '.' or '..' segment (ci//a.yml, ./ci/a.yml,
+    ci/../ci/a.yml), which GitLab does not normalise, or a '.git' one,
+    which is not part of the repository.
+    """
+    return any(segment in ("", ".", "..", ".git") for segment in path.split("/"))
+
+def in_nested_repository(root: str, directory: str) -> bool:
+    """
+    Whether `directory`, relative to the repository at `root`, is in a
+    submodule or another nested repository: it or one of its parents, below
+    the root, has a `.git` entry.
+    """
+    while directory:
+        if os.path.lexists(os.path.join(root, directory, ".git")):
+            return True
+        directory = os.path.dirname(directory)
+    return False
+
+def repository_files(root: str, directory: str = "") -> Iterator[str]:
+    """
+    The files under `directory` of the repository at `root`, relative to
+    the root and with '/' separators, as GitLab sees them: without `.git`
+    (a directory, or a file in a worktree or a submodule), and without the
+    files of submodules or other nested repositories.
+    """
+    if in_nested_repository(root, directory):
+        return
+    for current, subdirectories, files in os.walk(os.path.join(root, directory)):
+        subdirectories[:] = [d for d in subdirectories
+                             if d != ".git" and not os.path.lexists(os.path.join(current, d, ".git"))]
+        for name in files:
+            if name != ".git":
+                yield os.path.relpath(os.path.join(current, name), root).replace(os.sep, "/")
+
+def repository_file(root: str, relative: str) -> Optional[str]:
+    """
+    The path of the file `relative` of the repository at `root`, or None if
+    it is not one as GitLab sees it: missing, or in a submodule or another
+    nested repository (see repository_files()).
+    """
+    path = os.path.join(root, relative)
+    if not os.path.isfile(path) or in_nested_repository(root, os.path.dirname(relative)):
+        return None
+    return os.path.normpath(path)
+
+def matching_files(pattern: str, root: str) -> List[str]:
+    """
+    Return the files under `root` that a path or wildcard pattern matches, as
+    in GitLab: relative to the root of the repository, with or without a
+    leading slash, where `*` matches within a directory and `**` across
+    directories (`ci/**.yml` is every .yml file under ci/).
+    """
+    relative = pattern.lstrip("/")
+    if matches_no_file(relative):
+        # e.g. from an undefined variable in ci/$DIR/a.yml
+        return []
+    if "*" not in relative:
+        path = repository_file(root, relative)
+        return [path] if path else []
+
+    regex = re.compile("".join(
+        ".*" if part == "**" else "[^/]*" if part == "*" else re.escape(part)
+        for part in re.split(r"(\*\*|\*)", relative)
+    ) + "$")
+    # Only walk the directory before the first wildcard
+    fixed_prefix = os.path.dirname(relative[:relative.index("*")])
+    return sorted(os.path.join(root, path) for path in repository_files(root, fixed_prefix)
+                  if regex.match(path))
+
+def local_include_paths(local: str, base_path: str) -> List[str]:
+    """
+    Return the files a local include refers to (see matching_files()).
+    A missing file is an error; a wildcard that matches no file a warning.
+    """
+    matches = matching_files(local, base_path)
+    if not matches:
+        if "*" not in local:
+            raise ValueError(f"Local include '{local}' does not exist")
+        logger.warning(f"Local include '{local}' does not match any file")
+    return matches
+
+GLOB_SPECIAL = re.compile(r"[*?\[{]")
+
+def glob_regex(pattern: str, segment_start: bool = True) -> str:
+    """
+    Translate a `rules:exists` glob into a regex, with the syntax GitLab uses
+    there (Ruby's File.fnmatch with FNM_PATHNAME, FNM_DOTMATCH and
+    FNM_EXTGLOB): `*` and `?` do not match `/`, `**/` matches any number of
+    directories (none included), `[...]` is a character class and `{a,b}` an
+    alternative. Dot files are matched like any other. `segment_start` is
+    whether `pattern` starts a path segment, for a `{...}` alternative.
+    """
+    regex = []
+    i = 0
+    while i < len(pattern):
+        char = pattern[i]
+        # **/ is any number of directories only as a whole segment: a**/b is a*/b
+        at_segment_start = pattern[i - 1] == "/" if i else segment_start
+        if pattern.startswith("**/", i) and at_segment_start:
+            regex.append("(?:.*/)?")
+            i += 3
+            continue
+        if char == "*":
+            # `**` not followed by a slash is a plain `*`
+            while i + 1 < len(pattern) and pattern[i + 1] == "*":
+                i += 1
+            regex.append("[^/]*")
+        elif char == "?":
+            regex.append("[^/]")
+        elif char == "[" and "]" in pattern[i + 2:]:
+            end = pattern.index("]", i + 2)
+            body = pattern[i + 1:end]
+            if body.startswith("!"):
+                body = "^" + body[1:]
+            regex.append(f"[{body}]")
+            i = end
+        elif char == "{" and "}" in pattern[i:]:
+            end = pattern.index("}", i)
+            alternatives = pattern[i + 1:end].split(",")
+            regex.append("(?:" + "|".join(glob_regex(a, at_segment_start)
+                                          for a in alternatives) + ")")
+            i = end
+        else:
+            regex.append(re.escape(char))
+        i += 1
+    return "".join(regex)
+
+def exists_matches(pattern: str, root: str) -> bool:
+    """
+    Whether a `rules:exists` glob matches a file of the repository at `root`.
+    Unlike an include path, the pattern is relative to the root and taken
+    as written: a leading slash or an unnormalised segment (ci//a.yml,
+    ./a.yml, ../a.yml) matches nothing, as in GitLab.
+    """
+    relative = pattern
+    if relative.startswith("/") or matches_no_file(relative):
+        return False
+    special = GLOB_SPECIAL.search(relative)
+    if not special:
+        return repository_file(root, relative) is not None
+    regex = re.compile(glob_regex(relative) + "$")
+    # Only walk the directory before the first special character
+    fixed_prefix = os.path.dirname(relative[:special.start()])
+    return any(regex.match(path) for path in repository_files(root, fixed_prefix))
+
+VARIABLE = re.compile(r"\$(\w+)|\$\{(\w+)\}")
+
+def expand_defined_variables(text: str, variables: VariablesDict) -> str:
+    """Expand the variables of `text` that are defined, leaving the others as written."""
+    def replace(match: "re.Match[str]") -> str:
+        name = match.group(1) or match.group(2)
+        return str(variables[name]) if name in variables else match.group(0)
+    return VARIABLE.sub(replace, text)
+
+def unchecked_exists(rule: ConfigDict) -> Optional[str]:
+    """
+    The `exists` of a rule that cannot be checked here, if any: the files of
+    another project (exists:project), or a regular expression (exists:regexp).
+    """
+    exists = rule.get("exists")
+    if isinstance(exists, dict):
+        if "project" in exists:
+            return "exists:project, the files of another project"
+        if "regexp" in exists:
+            return "exists:regexp"
+    return None
+
+def exists_patterns(rule: ConfigDict) -> Optional[List[str]]:
+    """
+    The `exists` patterns of a rule, or None if it has no `exists` or one
+    that cannot be checked (see unchecked_exists()). `exists: {}` has no
+    pattern, so it matches nothing, as in GitLab.
+    """
+    if unchecked_exists(rule):
+        return None
+    exists = rule.get("exists")
+    if isinstance(exists, dict):
+        # paths: null is no path, as in GitLab
+        exists = exists.get("paths") or []
+    if exists is None:
+        return None
+    return [str(p) for p in (exists if isinstance(exists, list) else [exists])]
+
+def rules_need_variables(rules: Any) -> bool:
+    """
+    Whether include rules, checked by check_include_rules(), can only be
+    evaluated with the pipeline variables.
+    """
+    return any(rule.get("if") is not None
+               or any("$" in p for p in exists_patterns(rule) or [])
+               for rule in rules)
+
+INCLUDE_RULE_KEYS = {"if", "exists", "changes", "when"}
+EXISTS_KEYS = {"paths", "regexp", "project", "ref"}
+
+def check_include_rules(rules: Any) -> None:
+    """
+    Check the form of the `rules` of an include, as GitLab does for every
+    rule before evaluating any: a list of mappings with only the keys
+    `if`, `exists`, `changes` and `when`, where `if` is an expression and
+    `when` is `always` or `never`. Raises ValueError otherwise.
+
+    The syntax of an `if` expression is not checked: see include_rules_match().
+    """
+    if not isinstance(rules, list):
+        raise ValueError(f"must be a list of rules, not {rules!r}")
+    for rule in rules:
+        if not isinstance(rule, dict):
+            raise ValueError(f"a rule must be a mapping, not {rule!r}")
+        unknown = sorted(str(key) for key in set(rule) - INCLUDE_RULE_KEYS)
+        if unknown:
+            raise ValueError(f"unknown keys in a rule: {', '.join(unknown)}")
+        # if: null is no condition, as in GitLab
+        condition = rule.get("if")
+        if condition is not None and not isinstance(condition, str):
+            raise ValueError(f"if must be an expression, not {condition!r}")
+        # when: null is always, as in GitLab; false, '' or 0 are invalid
+        if rule.get("when") is not None and rule["when"] not in ("always", "never"):
+            raise ValueError(f"when must be always or never, not {rule['when']!r}")
+        exists = rule.get("exists")
+        if isinstance(exists, dict) and exists:
+            unknown = sorted(str(key) for key in set(exists) - EXISTS_KEYS)
+            if unknown:
+                raise ValueError(f"unknown keys in exists: {', '.join(unknown)}")
+            # exists: {} is valid, and matches nothing
+            if ("paths" in exists) == ("regexp" in exists):
+                raise ValueError("exists must have either paths or regexp")
+
+def include_rules_match(rules: Any, variables: VariablesDict, root: str) -> bool:
+    """
+    Whether the `rules` of an include keep it, as GitLab evaluates them: the
+    first rule whose `if` and `exists` both match decides, and the include
+    is kept unless its `when` is `never`. `exists` expands the variables that
+    are defined and leaves the others as written, as GitLab does. `changes`
+    cannot be known offline and is taken as matching, as for job rules, and
+    so are exists:project and exists:regexp, with a warning.
+
+    An `if` that cannot be evaluated is logged and taken as not matching,
+    as for job rules: the expression may be valid in GitLab but not
+    supported here. The rules must have been checked by check_include_rules().
+    """
+    for rule in rules:
+        condition = rule.get("if")
+        if condition is not None:
+            try:
+                matched = evaluate_condition(condition, variables, strict=True)
+            except ValueError as e:
+                logger.warning(f"Cannot evaluate an include rule, taken as not matching: {e}")
+                matched = False
+            if not matched:
+                continue
+        unchecked = unchecked_exists(rule)
+        if unchecked:
+            # As for changes, which is not known offline either
+            logger.warning(f"Cannot check {unchecked} of an include rule, taken as matching")
+        patterns = exists_patterns(rule)
+        if patterns is not None and not any(
+                exists_matches(expand_defined_variables(p, variables), root) for p in patterns):
+            continue
+        return rule.get("when") != "never"
+    return False
+
+SPEC_WITHOUT_CONFIGURATION = "has a spec header but no configuration after it"
+
+def yaml_without_configuration(file_path: str) -> Optional[str]:
+    """
+    Why a YAML file has no configuration, if it has none: it is empty
+    (e.g. only comments), or it has a `spec` header and nothing after it,
+    which GitLab rejects too.
+    """
+    with open(file_path, 'r') as f:
+        documents = list(yaml.load_all(f, Loader=GitLabCILoader))
+    if all(document is None for document in documents):
+        return "is empty"
+    if (len(documents) == 2 and documents[1] is None
+            and isinstance(documents[0], dict) and set(documents[0]) == {"spec"}):
+        return SPEC_WITHOUT_CONFIGURATION
+    return None
+
 def resolve_includes(config: ConfigDict, base_path: str,
                     root_path: Optional[str] = None, depth: int = 0,
                     current_file: Optional[str] = None,
                     job_sources: Optional[JobSourcesDict] = None,
-                    all_job_occurrences: Optional[JobOccurrencesDict] = None) -> ConfigDict:
+                    all_job_occurrences: Optional[JobOccurrencesDict] = None,
+                    variables: Optional[VariablesDict] = None,
+                    include_chain: Tuple[str, ...] = ()) -> ConfigDict:
     """
     Recursively resolve and merge included YAML files.
     The 'include' key in the YAML file can be a string (for a single include),
@@ -274,6 +565,14 @@ def resolve_includes(config: ConfigDict, base_path: str,
         current_file (str): Path to the current file being processed.
         job_sources (dict): Dictionary to track which file each job comes from.
         all_job_occurrences (dict): Dictionary to track all occurrences of each job.
+        variables (dict): The variables an include can use, in its path and its
+            rules: the predefined, project and pipeline variables, i.e. those
+            of a simulation profile (not the variables of the configuration,
+            which GitLab does not use there). None if unknown, as in validate:
+            an include that depends on them is then loaded if its file exists,
+            and skipped with a warning otherwise.
+        include_chain (tuple): The files that include the current one, to
+            detect an include cycle.
 
     Returns:
         dict: The configuration with all includes resolved and merged.
@@ -303,22 +602,77 @@ def resolve_includes(config: ConfigDict, base_path: str,
     if not isinstance(includes, list):
         includes = [includes]
 
+    chain = include_chain + ((current_file,) if current_file else ())
+
     # Process each include entry.
     for inc in includes:
-        try:
-            # Determine the file path for the include.
-            include_inputs = None
-            if isinstance(inc, str):
-                include_path = os.path.normpath(os.path.join(base_path, inc))
-            elif isinstance(inc, dict) and "local" in inc:
-                include_path = os.path.normpath(os.path.join(base_path, inc["local"]))
-                include_inputs = inc.get("inputs")
-            else:
-                # Unsupported include format, you might want to raise an error or skip.
-                continue
+        include_inputs = None
+        rules = None
+        if isinstance(inc, str):
+            local = None if inc.startswith(("http://", "https://")) else inc
+        elif isinstance(inc, dict) and "local" in inc:
+            local = inc["local"]
+            include_inputs = inc.get("inputs")
+            rules = inc.get("rules")
+            if not isinstance(local, str) or not local:
+                raise ValueError(f"Include {inc}: 'local' must be the path of a file")
+        else:
+            local = None
+        if local is None:
+            # remote, project, template and component includes need access to
+            # other repositories or servers: cimulator works offline, skip them.
+            logger.debug(f"Skipping non-local include {inc}")
+            continue
 
-            # Load the included YAML file.
-            included_config = load_yaml(include_path, include_inputs)
+        if rules is not None:
+            # Checked whether or not the rules can be evaluated, as GitLab
+            # checks every rule, even after one that matches
+            try:
+                check_include_rules(rules)
+            except ValueError as e:
+                raise ValueError(f"Include {inc}: rules: {e}") from e
+
+        # Whether the include depends on variables that are not known.
+        # Rules without any variable (only exists, or when) are evaluated
+        # even without them.
+        undecidable = variables is None and (
+            "$" in local or (rules is not None and rules_need_variables(rules)))
+        if rules is not None and not undecidable:
+            if not include_rules_match(rules, variables or {}, root_path):
+                logger.debug(f"Skipping include {inc}: its rules do not match")
+                continue
+        if variables is not None:
+            local = expand_variables_in_string(local, variables)
+        if undecidable and not matching_files(local, base_path):
+            logger.warning(f"Skipping include {inc}: it depends on variables, "
+                           f"which are only known when simulating, and its file does not exist")
+            continue
+
+        for include_path in local_include_paths(local, base_path):
+            # Load the included YAML file. An invalid file is an error, as
+            # GitLab rejects such a configuration.
+            shown_path = os.path.relpath(include_path, root_path)
+            if include_path in chain:
+                cycle = [os.path.relpath(f, root_path) for f in chain[chain.index(include_path):]]
+                raise ValueError(f"Include cycle: {' -> '.join(cycle + [shown_path])}")
+            if not include_path.endswith((".yml", ".yaml")):
+                raise ValueError(f"Included file '{shown_path}' does not have a YAML extension")
+            try:
+                missing_configuration = yaml_without_configuration(include_path)
+            except Exception as e:
+                raise ValueError(f"Error processing included file '{shown_path}': {e}") from e
+            # Before the inputs, which a file without configuration cannot use
+            if missing_configuration:
+                raise ValueError(f"Included file '{shown_path}' {missing_configuration}")
+            try:
+                included_config = load_yaml(include_path, include_inputs)
+            except InputsError:
+                raise
+            except Exception as e:
+                raise ValueError(f"Error processing included file '{shown_path}': {e}") from e
+            if not isinstance(included_config, dict):
+                raise ValueError(f"Included file '{shown_path}' must be a mapping of keywords, "
+                                 f"not a {type(included_config).__name__}")
 
             # Recursively resolve includes in the included file.
             # Always use the root path for resolving nested includes
@@ -329,27 +683,26 @@ def resolve_includes(config: ConfigDict, base_path: str,
                 depth + 1,
                 include_path,
                 job_sources,
-                all_job_occurrences
+                all_job_occurrences,
+                variables,
+                chain
             )
 
             # Merge the included configuration into the current configuration.
             merge_dicts(config, included_config)
-        except InputsError:
-            # Invalid inputs make the whole pipeline invalid in GitLab
-            raise
-        except Exception as e:
-            logger.warning(f"Error processing include {inc}: {e}")
-            # Continue with other includes even if one fails
 
     return config
 
-def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None) -> Tuple[ConfigDict, JobSourcesDict]:
+def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
+                     variables: Optional[VariablesDict] = None) -> Tuple[ConfigDict, JobSourcesDict]:
     """
     Load the root YAML file and resolve all includes recursively.
 
     Parameters:
         file_path (str): Path to the root .gitlab-ci.yml file.
         inputs (dict): Pipeline inputs for the root file's `spec:inputs` header.
+        variables (dict): The variables includes can use in their path and
+            rules, e.g. those of a simulation profile. See resolve_includes().
 
     Returns:
         tuple: (resolved_config, job_sources)
@@ -360,7 +713,14 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None) -> Tup
     base_path = os.path.dirname(file_path)
     logger.info(f"Root file: {file_path}")
     logger.debug(f"Base path: {base_path}")
+    # An empty root file is an empty pipeline, but a spec header with
+    # nothing after it is rejected, as GitLab does
+    if yaml_without_configuration(file_path) == SPEC_WITHOUT_CONFIGURATION:
+        raise ValueError(f"'{os.path.basename(file_path)}' {SPEC_WITHOUT_CONFIGURATION}")
     config = load_yaml(file_path, inputs)
+    if not isinstance(config, dict):
+        raise ValueError(f"'{os.path.basename(file_path)}' must be a mapping of keywords, "
+                         f"not a {type(config).__name__}")
 
     # Initialize job_sources dictionary and all_jobs_occurrences
     job_sources: JobSourcesDict = {}
@@ -370,7 +730,8 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None) -> Tup
     track_job_sources(config, file_path, job_sources, all_job_occurrences)
 
     # Resolve includes and track job sources
-    resolved_config = resolve_includes(config, base_path, base_path, 0, file_path, job_sources, all_job_occurrences)
+    resolved_config = resolve_includes(config, base_path, base_path, 0, file_path, job_sources,
+                                       all_job_occurrences, variables)
 
     # Now that all includes are resolved, resolve any reference tags
     resolved_config = resolve_references(resolved_config, resolved_config)

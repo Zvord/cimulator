@@ -28,7 +28,9 @@ flowchart TD
 - **Key Functions**:
   - `load_yaml()`: Loads a YAML file into a dictionary using a custom GitLab CI YAML loader.
   - `merge_dicts()`: Recursively merges dictionaries.
-  - `resolve_includes()`: Resolves and merges included YAML files.
+  - `resolve_includes()`: Resolves and merges included YAML files. Local includes only (others need network access and are skipped); every error is fatal, as in GitLab.
+  - `check_include_rules()` / `include_rules_match()`: Check the form of include rules, then evaluate them (`if`, `exists`) with the profile variables.
+  - `matching_files()` / `exists_matches()` / `repository_files()`: Match include paths and `exists` globs against the files GitLab sees: without `.git` and submodules, paths taken as written.
   - `resolve_references()`: Recursively resolves `!reference` tags with sophisticated array flattening capabilities.
   - `load_and_resolve()`: Main entry point that loads the root file, resolves all includes, and processes references.
   - `ensure_script_items_are_strings()`: Post-processes YAML to ensure script items are always strings.
@@ -59,7 +61,8 @@ flowchart TD
 ### 5. Configuration Module
 - **Responsibility**: Loads simulation configuration files.
 - **Key Functions**:
-  - `load_simulation_config()`: Loads a simulation configuration YAML file.
+  - `load_simulation_config()`: Loads a simulation configuration YAML file with `TextValueLoader`, which reads values as written (as GitLab variables are text) but keeps null and `<<` merges.
+  - `profile_variables()`: The variables of a profile, as strings; checks that the profile is a mapping of scalar values.
 - **Design Pattern**: Simple factory for configuration objects.
 
 ### 6. Simulation Engine Module

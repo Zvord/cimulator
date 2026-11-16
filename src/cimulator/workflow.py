@@ -21,6 +21,18 @@ def regex_not_match(value: str, pattern: str) -> bool:
     except Exception:
         return True
 
+def add_regex_helpers(eval_env: dict, strict: bool) -> None:
+    """
+    Add the regex helpers of a processed condition. Strict ones let an invalid
+    regex raise instead of taking it as not matching.
+    """
+    if strict:
+        eval_env["regex_match"] = lambda value, pattern: re.search(pattern, str(value)) is not None
+        eval_env["regex_not_match"] = lambda value, pattern: re.search(pattern, str(value)) is None
+    else:
+        eval_env["regex_match"] = regex_match
+        eval_env["regex_not_match"] = regex_not_match
+
 def preprocess_condition(condition: str) -> str:
     """
     Transform a condition string into a Python evaluable expression.
@@ -70,11 +82,13 @@ def preprocess_condition(condition: str) -> str:
     condition = re.sub(r'\$(\w+)', r'\1', condition)
     return condition
 
-def evaluate_condition(condition: str, variables: VariablesDict) -> bool:
+def evaluate_condition(condition: str, variables: VariablesDict, strict: bool = False) -> bool:
     """
     Evaluate a condition string against a set of variables.
 
-    Returns True if the condition is satisfied, False otherwise.
+    Returns True if the condition is satisfied, False otherwise. An invalid
+    condition is printed and taken as not satisfied, or with `strict` raises
+    ValueError.
     """
     # Special case for regex conditions
     if "=~" in condition or "!~" in condition:
@@ -83,11 +97,12 @@ def evaluate_condition(condition: str, variables: VariablesDict) -> bool:
         # Create an evaluation environment: supply all variable values
         eval_env = {key: value for key, value in variables.items()}
         # Add the regex helpers
-        eval_env["regex_match"] = regex_match
-        eval_env["regex_not_match"] = regex_not_match
+        add_regex_helpers(eval_env, strict)
         try:
             return bool(eval(processed, {"__builtins__": {}}, eval_env))
         except Exception as e:
+            if strict:
+                raise ValueError(f"invalid expression '{condition}': {e}") from e
             print(f"Error evaluating regex condition '{condition}': {e}")
             return False
 
@@ -114,12 +129,13 @@ def evaluate_condition(condition: str, variables: VariablesDict) -> bool:
     # Create an evaluation environment: supply all variable values
     eval_env = {key: value for key, value in variables.items()}
     # Add the regex helpers
-    eval_env["regex_match"] = regex_match
-    eval_env["regex_not_match"] = regex_not_match
+    add_regex_helpers(eval_env, strict)
 
     try:
         return bool(eval(processed, {"__builtins__": {}}, eval_env))
     except Exception as e:
+        if strict:
+            raise ValueError(f"invalid expression '{condition}': {e}") from e
         print(f"Error evaluating condition '{condition}' (expanded to '{expanded_condition}'): {e}")
         return False
 
