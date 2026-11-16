@@ -50,6 +50,12 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
+0. **Local includes**, loaded as GitLab does (checked against GitLab's pipeline dry run):
+   - Missing or invalid includes are errors, not warnings: missing file, YAML syntax, no YAML extension, empty file, `spec` header with nothing after it, not a mapping, include cycle, and the form of every include rule (in both commands, even after a rule that matched)
+   - Paths are taken as written: a leading slash is allowed in include paths but not in `exists`, and `.`, `..` or `//` segments are not normalised, so they match no file; `*`/`**` wildcards; `.git` and submodules (any directory with a `.git` entry) are not part of the repository
+   - `include:rules`: `if` (an expression the evaluator cannot handle is a warning, taken as not matching), `exists` with GitLab's glob syntax (fnmatch), `changes` taken as matching, `exists:project` and `exists:regexp` taken as matching with a warning
+   - In `simulate`, include rules and variables in include paths use the profile variables (not the configuration's `variables`, as in GitLab). `validate`, without a profile, evaluates only rules without variables, and skips an include that depends on them when its file is missing
+   - Profiles must be a mapping of scalar values, read as written (text, not retyped by YAML; null and `<<` merges kept)
 0. **CI/CD inputs**: `spec:inputs` header parsed (`inputs.py`), inputs validated (type/options/regex) and interpolated; `--input KEY=VALUE` CLI option
 1. **Script parsing bug fix**: Script lines with colons now parsed as strings, not dictionaries
 2. **Duplicate job detection**: Track job sources across files with validation warnings
@@ -63,6 +69,7 @@ The project is structured as a Python package with a clear modular architecture 
 2. **Incomplete GitLab CI support**: Missing some advanced features
 3. **Limited validation**: Need more schema and best practices validation
 4. **Performance**: Large configurations may have performance issues
+5. **Condition evaluator** (`workflow.py`): variable values are pasted into a Python expression, so values with quotes or backslashes are misread; `null`, regex flags, regexes held in variables and undefined variables in regexes are not supported (such job rules are taken as not matching, include rules too with a warning)
 
 ## Next Development Priorities
 
