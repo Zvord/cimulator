@@ -17,6 +17,7 @@ The project is structured as a Python package with a clear modular architecture 
 ### Core Functionality
 - ✅ Loading and parsing GitLab CI YAML files
 - ✅ Recursively resolving and merging included YAML files
+  - Merged in GitLab's order: includes in order, each on top of the previous ones, then the including file on top of them all; mappings merged key by key, lists and nulls replaced (`merge_included()` in `loader.py`); an empty `variables:` or `workflow:` that replaces an included one is read as empty, and so is a null job `extends`, `needs`, `variables` or `rules`, or workflow `rules` (also when it overrides an extended value; `without_null_keys()` in `job_expander.py`), as is a null `variables:` in a rule. Without workflow rules, the pipeline runs; empty workflow rules (`rules: []`) are not none: an error, as in GitLab
 - ✅ Expanding job definitions using the `extends` mechanism
 - ✅ Evaluating workflow rules to determine if a pipeline should run
 - ✅ Expanding variables in job definitions

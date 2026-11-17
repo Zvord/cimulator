@@ -5,6 +5,17 @@ from cimulator.types import JobDict
 from cimulator.loader import merge_dicts
 from cimulator.matrix import ErrorHandler, MatrixInstancesDict, expand_matrix_jobs
 
+# Keys of a job that GitLab reads as absent when null, e.g. a null that
+# overrides an included or extended value
+NULL_AS_ABSENT = ("extends", "needs", "variables", "rules")
+
+def without_null_keys(job: JobDict) -> JobDict:
+    """The job without the keys of NULL_AS_ABSENT whose value is null."""
+    for key in NULL_AS_ABSENT:
+        if key in job and job[key] is None:
+            del job[key]
+    return job
+
 def expand_job(job_name: str, all_jobs: JobDict, cache: Optional[JobDict] = None, visited: Optional[Set[str]] = None,
                _path: Optional[List[str]] = None) -> JobDict:
     """
@@ -48,8 +59,10 @@ def expand_job(job_name: str, all_jobs: JobDict, cache: Optional[JobDict] = None
         raise Exception(f"Job definition for '{job_name}' is not a dictionary: {type(job_def).__name__}")
     job = copy.deepcopy(job_def)
 
-    # If there is no "extends", the job is already fully defined.
-    if 'extends' not in job:
+    # If there is no "extends" (or a null one), the job is already fully
+    # defined. A null that overrides an inherited value is dropped below.
+    if job.get('extends') is None:
+        job = without_null_keys(job)
         cache[job_name] = job
         visited.remove(job_name)
         _path.pop()
@@ -71,7 +84,7 @@ def expand_job(job_name: str, all_jobs: JobDict, cache: Optional[JobDict] = None
         merged_parent = merge_dicts(merged_parent, copy.deepcopy(parent_expanded))
 
     # Merge the current job over the merged parent's values.
-    merged = merge_dicts(merged_parent, job)
+    merged = without_null_keys(merge_dicts(merged_parent, job))
     cache[job_name] = merged
     visited.remove(job_name)
     _path.pop()

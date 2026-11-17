@@ -172,10 +172,12 @@ def main() -> None:
             duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
 
             # Get the workflow configuration (if any).
-            workflow_config = ci_config.get("workflow", {})
+            # An empty `workflow:` or `variables:` (null), e.g. one that
+            # replaces an included one, has nothing, as in GitLab
+            workflow_config = ci_config.get("workflow") or {}
 
             # Get global variables from the GitLab CI file
-            gitlab_vars = variable_values(ci_config.get("variables", {}))
+            gitlab_vars = variable_values(ci_config.get("variables") or {})
 
             # Merge GitLab CI variables with profile variables
             # Profile variables take precedence over GitLab CI variables

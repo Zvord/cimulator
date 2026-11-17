@@ -231,6 +231,23 @@ def merge_dicts(base: ConfigDict, incoming: ConfigDict) -> ConfigDict:
             base[key] = value
     return base
 
+def merge_included(base: ConfigDict, incoming: ConfigDict) -> ConfigDict:
+    """
+    Merge one configuration on top of another, as GitLab merges includes.
+
+    Mappings are merged key by key; any other value from `incoming`,
+    including a list or null, replaces the one in `base`. Neither input is
+    modified, so a mapping shared through a YAML alias is not changed
+    by a merge into another key.
+    """
+    merged = dict(base)
+    for key, value in incoming.items():
+        if isinstance(merged.get(key), dict) and isinstance(value, dict):
+            merged[key] = merge_included(merged[key], value)
+        else:
+            merged[key] = value
+    return merged
+
 def track_job_sources(config: ConfigDict, current_file: str,
                      job_sources: Optional[JobSourcesDict] = None,
                      all_job_occurrences: Optional[JobOccurrencesDict] = None) -> None:
@@ -253,9 +270,11 @@ def track_job_sources(config: ConfigDict, current_file: str,
         all_job_occurrences = {}
 
     for key in config:
-        if key not in GLOBAL_KEYWORDS and isinstance(config[key], dict):
-            # Record the source for all jobs, even if they've been seen before
-            # This will ensure we have the most recent source for duplicate jobs
+        if key not in GLOBAL_KEYWORDS:
+            # Record the source of every key that may be a job, whatever its
+            # value: a job can be overridden with a `!reference` that is only
+            # resolved later. Only the keys that end up as jobs are checked
+            # for duplicates.
             job_sources[key] = current_file
             logger.debug(f"Tracking job '{key}' from file: {current_file}")
 
@@ -599,12 +618,10 @@ def resolve_includes(config: ConfigDict, base_path: str,
     if all_job_occurrences is None:
         all_job_occurrences = {}
 
-    # Track job sources for the current file
-    if current_file:
-        track_job_sources(config, current_file, job_sources, all_job_occurrences)
-
     # If there's no 'include' key, return the config as-is.
     if "include" not in config:
+        if current_file:
+            track_job_sources(config, current_file, job_sources, all_job_occurrences)
         return config
 
     # Retrieve and remove the 'include' key from the config.
@@ -613,6 +630,10 @@ def resolve_includes(config: ConfigDict, base_path: str,
         includes = [includes]
 
     chain = include_chain + ((current_file,) if current_file else ())
+
+    # As in GitLab, the included files are merged in order, each one on top
+    # of the previous ones, and the file's own content on top of them all.
+    merged: ConfigDict = {}
 
     # Process each include entry.
     for inc in includes:
@@ -703,10 +724,14 @@ def resolve_includes(config: ConfigDict, base_path: str,
                 chain
             )
 
-            # Merge the included configuration into the current configuration.
-            merge_dicts(config, included_config)
+            merged = merge_included(merged, included_config)
 
-    return config
+    # Track job sources in merge order, so that the last occurrence of a job
+    # is the file whose definition takes precedence.
+    if current_file:
+        track_job_sources(config, current_file, job_sources, all_job_occurrences)
+
+    return merge_included(merged, config)
 
 def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
                      variables: Optional[VariablesDict] = None) -> Tuple[ConfigDict, JobSourcesDict]:
@@ -741,9 +766,6 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
     job_sources: JobSourcesDict = {}
     all_job_occurrences: JobOccurrencesDict = {}
 
-    # Track jobs in the root file
-    track_job_sources(config, file_path, job_sources, all_job_occurrences)
-
     # Resolve includes and track job sources
     resolved_config = resolve_includes(config, base_path, base_path, 0, file_path, job_sources,
                                        all_job_occurrences, variables)
@@ -754,8 +776,9 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
     # Update job_sources to include information about all occurrences
     for job_name, occurrences in all_job_occurrences.items():
         if len(occurrences) > 1:
-            # If there are multiple occurrences, store the last one as the source
-            # but also add a special attribute to indicate it's a duplicate
+            # If there are multiple occurrences, store the one that takes
+            # precedence (the last one merged) as the source, and the others
+            # as duplicates
             job_sources[job_name] = occurrences[-1]
             job_sources[f"{job_name}__duplicates"] = occurrences[:-1]
 

@@ -44,15 +44,16 @@ class TestDuplicateJobs(unittest.TestCase):
         duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
 
         # Verify that we found the expected duplicates
-        self.assertEqual(len(duplicate_warnings), 2)
+        self.assertEqual(len(duplicate_warnings), 1)
 
         # Check that duplicate_job is detected
         duplicate_job_warning = next((w for w in duplicate_warnings if "duplicate_job" in w), None)
         self.assertIsNotNone(duplicate_job_warning)
 
-        # Check that .template_job is detected
+        # Overriding a template (a hidden job) is not reported: it is the
+        # usual way to customise an included one
         template_job_warning = next((w for w in duplicate_warnings if ".template_job" in w), None)
-        self.assertIsNotNone(template_job_warning)
+        self.assertIsNone(template_job_warning)
 
     def test_validate_command_reports_duplicates(self):
         """Test that the validate command reports duplicate jobs."""
@@ -66,7 +67,7 @@ class TestDuplicateJobs(unittest.TestCase):
             # Check that warnings about duplicate jobs are reported
             self.assertIn("Warnings about duplicate jobs", stderr_output)
             self.assertIn("duplicate_job", stderr_output)
-            self.assertIn(".template_job", stderr_output)
+            self.assertNotIn(".template_job", stderr_output)
 
     def test_simulate_command_reports_duplicates(self):
         """Test that the simulate command reports duplicate jobs."""
@@ -80,7 +81,7 @@ class TestDuplicateJobs(unittest.TestCase):
             # Check that warnings about duplicate jobs are reported
             self.assertIn("Warnings about duplicate jobs", stderr_output)
             self.assertIn("duplicate_job", stderr_output)
-            self.assertIn(".template_job", stderr_output)
+            self.assertNotIn(".template_job", stderr_output)
 
 if __name__ == '__main__':
     unittest.main()
