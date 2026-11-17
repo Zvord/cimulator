@@ -1,13 +1,28 @@
+import copy
 import logging
 from typing import List, Set, Tuple, Optional, Union
 from cimulator.types import JobDict, ConfigDict, VariablesDict
 from cimulator.job_expander import expand_pipeline_jobs
+from cimulator.expression import ExpressionError
 from cimulator.workflow import evaluate_workflow, evaluate_rules
-from cimulator.variable_expander import expand_variables
-from cimulator.validator import validate_job_needs_dependencies
+from cimulator.variable_expander import expand_variables, variable_values
+from cimulator.validator import validate_job_needs_dependencies, validate_rules
 
 # Get the logger for this module
 logger = logging.getLogger(__name__)
+
+def keep_as_written(expanded_job: JobDict, job: JobDict) -> JobDict:
+    """
+    The job with its variables expanded, but its needs and rules as written:
+    GitLab does not expand variables in needs, which name jobs as written
+    (e.g. a matrix job with a variable in a matrix value), nor in rules, whose
+    expressions use the variables when evaluated. They are copies, not shared
+    with the job or another simulated job.
+    """
+    for key in ("needs", "rules"):
+        if key in job:
+            expanded_job[key] = copy.deepcopy(job[key])
+    return expanded_job
 
 def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_variables: VariablesDict) -> ConfigDict:
     """
@@ -36,8 +51,18 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
     """
     logger.debug("Starting pipeline simulation.")
 
+    # As GitLab, reject invalid rules anywhere, before evaluating any. All
+    # of them are reported, as validate does: they may be in the form of the
+    # rules, not only in an expression.
+    rule_errors = validate_rules(all_jobs, workflow_config)
+    if rule_errors:
+        raise ValueError("invalid rules:\n" + "\n".join(f"  - {error}" for error in rule_errors))
+
     # Evaluate the workflow.
-    wf_run, wf_rule, wf_vars, wf_triggered_condition = evaluate_workflow(workflow_config, global_variables)
+    try:
+        wf_run, wf_rule, wf_vars, wf_triggered_condition = evaluate_workflow(workflow_config, global_variables)
+    except ExpressionError as e:
+        raise ExpressionError(f"workflow: rules: {e}") from e
     logger.debug(f"Workflow evaluation: should_run={wf_run}, triggered_condition={wf_triggered_condition}, variables={wf_vars}")
 
     # Merge workflow variables with the global variables.
@@ -59,11 +84,14 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
     sorted_job_names = sorted(expanded_jobs.keys())
 
     for job_name in sorted_job_names:
+        # Hidden jobs never run: their rules are not evaluated, as in GitLab
+        if job_name.startswith('.'):
+            continue
         job = expanded_jobs[job_name]
         logger.debug(f"Processing job '{job_name}': {job}")
 
         # Get the job's variables section
-        job_variables = job.get("variables", {})
+        job_variables = variable_values(job.get("variables", {}))
 
         # Create a copy of the simulation variables for this job
         job_simulation_variables = simulation_variables.copy()
@@ -98,7 +126,10 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
             job_simulation_variables_for_rules = job_simulation_variables.copy()
             job_simulation_variables_for_rules.update(expanded_job_variables)
 
-            should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables_for_rules)
+            try:
+                should_run, triggered_rule, job_vars, triggered_condition = evaluate_rules(job_rules, job_simulation_variables_for_rules)
+            except ExpressionError as e:
+                raise ExpressionError(f"Job '{job_name}': rules: {e}") from e
 
             logger.debug(f"Job '{job_name}' rules evaluation: should_run={should_run}, triggered_condition={triggered_condition}, variables={job_vars}")
             if not should_run:
@@ -109,11 +140,7 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
 
         # Expand all variables in the job definition.
         expanded_job = expand_variables(job_with_expanded_variables, job_simulation_variables)
-        # GitLab does not expand variables in needs: they name jobs as
-        # written, e.g. a matrix job with a variable in a matrix value
-        if "needs" in job:
-            expanded_job["needs"] = job["needs"]
-        simulation_jobs[job_name] = expanded_job
+        simulation_jobs[job_name] = keep_as_written(expanded_job, job)
         logger.debug(f"Final expanded job '{job_name}': {expanded_job}")
 
         # We don't update the global simulation variables with job-specific variables
@@ -135,7 +162,7 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
     # Process each job by properly expanding variables using both global and job-specific variables
     for job_name, job in expanded_jobs.items():
         # Get the job's variables section
-        job_variables = job.get("variables", {})
+        job_variables = variable_values(job.get("variables", {}))
 
         # Create a copy of the simulation variables for this job
         job_simulation_variables = simulation_variables.copy()
@@ -158,7 +185,8 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
         job_simulation_variables.update(expanded_job_variables)
 
         # Apply the full variable expansion to the job
-        all_expanded_jobs[job_name] = expand_variables(job.copy(), job_simulation_variables)
+        all_expanded_jobs[job_name] = keep_as_written(
+            expand_variables(job.copy(), job_simulation_variables), job)
 
     simulation_summary = {
         "workflow_run": wf_run,

@@ -53,10 +53,18 @@ flowchart TD
 ### 3. Workflow Module
 - **Responsibility**: Evaluates workflow rules to determine if a pipeline should run.
 - **Key Functions**:
-  - `evaluate_condition()`: Evaluates a condition string against variables.
+  - `evaluate_condition()`: Evaluates a condition string against variables, with the Expression module.
+  - `rules_list()`: Rules as GitLab reads them: null is none, nested lists flattened up to 10 levels, each rule a mapping.
   - `evaluate_rules()`: Evaluates a list of rules to determine if a job should run.
   - `evaluate_workflow()`: Evaluates the workflow configuration.
 - **Design Pattern**: Strategy pattern for rule evaluation.
+
+### Expression Module (`expression.py`)
+- **Responsibility**: Parses and evaluates GitLab CI expressions (`rules:if`) with GitLab's semantics, without `eval`.
+- **Key Functions**:
+  - `evaluate_expression()`: Tokenizes and evaluates an expression (recursive descent: `||` < `&&` < comparisons < `!`). Raises `ExpressionError` for what GitLab rejects and `UnsupportedExpression` for what it cannot evaluate.
+  - `check_expression()`: Checks the syntax only, as GitLab does for every rule (used by `validate_rules()` in the validator and `check_include_rules()`). A match Python cannot evaluate is an `Unknown` value, resolved where the other operands decide.
+  - `python_regex()`: Translates GitLab's regex syntax (RE2) to Python's.
 
 ### 4. Variable Expander Module
 - **Responsibility**: Expands variables in strings, dictionaries, and lists.
@@ -134,7 +142,7 @@ flowchart TD
    - Array flattening when references resolve to lists
    - Delayed resolution after all includes are processed
    - Support for complex scenarios like file list templates with YAML anchors
-4. **Condition Evaluation**: Converting GitLab CI condition syntax to Python-evaluable expressions.
+4. **Condition Evaluation**: Parsing GitLab CI conditions with their own grammar and semantics (`expression.py`); values are data, never code.
 5. **Modular Design**: Separating concerns into distinct modules for better maintainability.
 6. **Logging**: Using Python's logging module for detailed debugging information with configurable verbosity.
 7. **Validation**: Implementing comprehensive validation for job dependencies to catch configuration errors early.

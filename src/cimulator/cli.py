@@ -12,7 +12,17 @@ from cimulator.inputs import parse_cli_inputs
 from cimulator.job_expander import expand_all_jobs
 from cimulator.simulation_engine import simulate_pipeline
 from cimulator.config import load_simulation_config, profile_variables
-from cimulator.validator import validate_job_dependencies, detect_duplicate_jobs
+from cimulator.variable_expander import variable_values
+from cimulator.validator import validate_job_dependencies, validate_rules, detect_duplicate_jobs
+
+
+class NoAliasDumper(yaml.Dumper):
+    """
+    Writes every value in full: the simulated jobs keep their needs and rules
+    as written, with what the configuration shares through YAML anchors.
+    """
+    def ignore_aliases(self, data):
+        return True
 
 def setup_logging(level: int) -> None:
     """
@@ -108,8 +118,10 @@ def main() -> None:
             # Extract jobs from the configuration
             jobs = extract_jobs(config)
 
-            # Validate job dependencies
+            # Validate job dependencies, and the rules (their form and the
+            # syntax of every if)
             validation_errors = validate_job_dependencies(jobs)
+            validation_errors += validate_rules(jobs, config.get("workflow"))
 
             # Check for duplicate jobs
             duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
@@ -163,7 +175,7 @@ def main() -> None:
             workflow_config = ci_config.get("workflow", {})
 
             # Get global variables from the GitLab CI file
-            gitlab_vars = ci_config.get("variables", {})
+            gitlab_vars = variable_values(ci_config.get("variables", {}))
 
             # Merge GitLab CI variables with profile variables
             # Profile variables take precedence over GitLab CI variables
@@ -173,7 +185,7 @@ def main() -> None:
             simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
 
             # First, dump the simulation summary to YAML
-            yaml_content = yaml.dump(simulation_summary, default_flow_style=False)
+            yaml_content = yaml.dump(simulation_summary, Dumper=NoAliasDumper, default_flow_style=False)
 
             # Post-process the YAML content to add empty lines between jobs
             lines = yaml_content.split('\n')

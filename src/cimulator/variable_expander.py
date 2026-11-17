@@ -2,6 +2,32 @@ import re
 from typing import Any, List, Union, Optional
 from cimulator.types import VariablesDict
 
+def variable_value(value: Any) -> str:
+    """
+    A variable's value as text, as GitLab has it: YAML gives `true` or `1`
+    as a boolean or a number, while GitLab's value is the text `true` or
+    `1`. A variable written as a mapping (`{value: ..., description: ...}`)
+    has its `value`, and a variable without a value (`FOO:`) is empty.
+    """
+    if isinstance(value, dict):
+        return variable_value(value.get("value"))
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return value if isinstance(value, str) else str(value)
+
+def variable_values(variables: Any) -> Any:
+    """
+    Variables as GitLab has them, as text: see variable_value(). An empty
+    `variables:` (null) has none, as in GitLab.
+    """
+    if variables is None:
+        return {}
+    if not isinstance(variables, dict):
+        return variables
+    return {name: variable_value(value) for name, value in variables.items()}
+
 def expand_variables_in_string(text: str, variables: VariablesDict) -> str:
     """
     Replace placeholders in a string with corresponding variable values.
@@ -11,7 +37,7 @@ def expand_variables_in_string(text: str, variables: VariablesDict) -> str:
 
     def replace(match):
         var_name = match.group(1) or match.group(2)
-        return str(variables.get(var_name, ""))
+        return variable_value(variables.get(var_name))
 
     return pattern.sub(replace, text)
 

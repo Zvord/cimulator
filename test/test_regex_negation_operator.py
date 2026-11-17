@@ -1,5 +1,5 @@
 import pytest
-from cimulator.workflow import evaluate_condition, preprocess_condition
+from cimulator.workflow import evaluate_condition
 
 def test_regex_negation_operator():
     """Test that the !~ operator (regex negation) works correctly."""

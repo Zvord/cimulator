@@ -1,3 +1,5 @@
+import json
+
 import pytest
 from pathlib import Path
 
@@ -280,22 +282,35 @@ class TestRulesConditions:
     def test_if_null_is_no_condition(self, tmp_path):
         assert include_rules_match([{"if": None}], {}, str(tmp_path))
 
-    @pytest.mark.parametrize("condition", [
-        # Valid in GitLab, not supported by the evaluator
-        "$CI_COMMIT_TAG =~ /^v/",
-        "$DEPLOY_ENV != null",
-        "$BRANCH =~ /^release/i",
-        '$QUOTED == "a"',
-        # Invalid
-        "$X ==",
-        "$X =~ /(/",
+    @pytest.mark.parametrize("condition, variables, included", [
+        ("$CI_COMMIT_TAG =~ /^v/", {"CI_COMMIT_TAG": "v1"}, True),
+        ("$DEPLOY_ENV != null", {}, False),
+        ("$BRANCH =~ /^release/i", {"BRANCH": "Release-1"}, True),
+        ('$QUOTED == \'say "hi"\'', {"QUOTED": 'say "hi"'}, True),
     ])
-    def test_if_that_cannot_be_evaluated_is_a_warning(self, tmp_path, caplog, condition):
-        # Taken as not matching, as for job rules, instead of stopping the load
+    def test_if_is_evaluated(self, tmp_path, condition, variables, included):
+        write(tmp_path / "ci" / "jobs.yml", "inc_job:\n  script: [echo]\n")
         root = write(tmp_path / ".gitlab-ci.yml",
-                     f"include:\n  - local: ci/missing.yml\n    rules:\n      - if: '{condition}'\n"
+                     f"include:\n  - local: ci/jobs.yml\n    rules:\n      - if: {json.dumps(condition)}\n"
                      "job:\n  script: [echo]\n")
-        config, _ = load_and_resolve(root, variables={"X": "1", "QUOTED": 'say "hi"'})
+        config, _ = load_and_resolve(root, variables=variables)
+        assert ("inc_job" in config) is included
+
+    @pytest.mark.parametrize("condition", ["$X ==", "$X =~ /(/", "$X and $Y"])
+    def test_invalid_if_fails(self, tmp_path, condition):
+        # As in GitLab: include:rule if invalid expression syntax
+        root = write(tmp_path / ".gitlab-ci.yml",
+                     f"include:\n  - local: ci/missing.yml\n    rules:\n      - if: '{condition}'\n")
+        with pytest.raises(ValueError, match=r"Include .*rules: invalid expression"):
+            load_and_resolve(root, variables={"X": "1"})
+
+    def test_if_that_cannot_be_evaluated_is_a_warning(self, tmp_path, caplog):
+        # Valid in GitLab, but Python has no ungreedy flag: taken as not
+        # matching, as for job rules, instead of stopping the load
+        root = write(tmp_path / ".gitlab-ci.yml",
+                     "include:\n  - local: ci/missing.yml\n    rules:\n      - if: '$X =~ /a+/U'\n"
+                     "job:\n  script: [echo]\n")
+        config, _ = load_and_resolve(root, variables={"X": "aa"})
         assert set(config) == {"job"}
         assert "Cannot evaluate an include rule" in caplog.text
 
@@ -306,6 +321,11 @@ class TestRulesConditions:
         # Also after a rule that matches
         ("[{if: '$CI'}, {if: 5}]", "if must be an expression, not 5"),
         ("[{when: never}, {if: 5}]", "if must be an expression, not 5"),
+        # The syntax of every if is checked too, without evaluating it
+        ("[{if: '$CI'}, {if: '$A =='}]", "invalid expression '\\$A =='"),
+        ("[{when: never}, {if: '$A =~ /a(/'}]", "invalid expression '\\$A =~ /a\\(/'"),
+        # Nested lists of rules are flattened and checked, as for job rules
+        ("[[{if: '$A =='}]]", "invalid expression '\\$A =='"),
         # GitLab: include:rule config should be a hash
         ("[foo]", "a rule must be a mapping, not 'foo'"),
         # GitLab: include:rule when unknown value: on_success
@@ -315,6 +335,10 @@ class TestRulesConditions:
         ("[{when: false}]", "when must be always or never, not False"),
         ("[{when: ''}]", "when must be always or never, not ''"),
         ("[{when: 0}]", "when must be always or never, not 0"),
+        # GitLab: include:rules config can't be blank
+        ("[]", "must not be an empty list"),
+        # GitLab: include:include rules should be an array of hashes
+        ("[[]]", "must contain at least one rule"),
         # GitLab: include:rules config should be an array
         ("{if: '$CI'}", "must be a list of rules"),
         # GitLab: include:rule config contains unknown keys: foo
@@ -336,9 +360,24 @@ class TestRulesConditions:
         with pytest.raises(ValueError, match=r"Include .*rules: " + error):
             load_and_resolve(root, variables=variables)
 
+    @pytest.mark.parametrize("include", ["project: group/project\n    file: ci/jobs.yml",
+                                         "remote: https://example.com/jobs.yml",
+                                         "template: Jobs/Build.gitlab-ci.yml"])
+    @pytest.mark.parametrize("rules, error", [
+        ("[{when: always}, {if: '$A =='}]", "invalid expression '\\$A =='"),
+        ("[foo]", "a rule must be a mapping, not 'foo'"),
+    ])
+    def test_rules_of_non_local_includes_are_checked(self, tmp_path, include, rules, error):
+        # GitLab checks them too, although cimulator does not load the file
+        root = write(tmp_path / ".gitlab-ci.yml",
+                     f"include:\n  - {include}\n    rules: {rules}\njob:\n  script: [echo]\n")
+        with pytest.raises(ValueError, match=r"Include .*rules: " + error):
+            load_and_resolve(root, variables={})
+
     @pytest.mark.parametrize("rules", [
-        "[{if: '$CI', exists: [a], changes: [b], when: always}]", "[{when: never}]", "[{if: null}]", "[]",
+        "[{if: '$CI', exists: [a], changes: [b], when: always}]", "[{when: never}]", "[{if: null}]", "[[{if: '$CI'}, []]]",
         "[{exists: {}}]", "[{exists: {project: g/p, paths: [a], ref: main}}]",
+        "[[{if: '$CI'}], [[{when: never}]]]",
     ])
     def test_valid_rules(self, tmp_path, rules):
         write(tmp_path / "ci" / "jobs.yml", "job:\n  script: [echo]\n")
@@ -362,6 +401,63 @@ job:
 """)
         config, _ = load_and_resolve(root)
         assert set(config) == {"job"}
+
+    def test_without_variables_an_if_without_variables_is_evaluated(self, tmp_path):
+        # Variables are not expanded in quoted strings: "$A" is always "$A",
+        # as checked against GitLab's pipeline dry run
+        write(tmp_path / "ci" / "false.yml", "false_job:\n  script: [echo]\n")
+        write(tmp_path / "ci" / "quoted.yml", "quoted_job:\n  script: [echo]\n")
+        write(tmp_path / "ci" / "true.yml", "true_job:\n  script: [echo]\n")
+        root = write(tmp_path / ".gitlab-ci.yml", """
+include:
+  - local: ci/false.yml
+    rules:
+      - if: '"" != ""'
+  - local: ci/quoted.yml
+    rules:
+      - if: '"$CI_COMMIT_BRANCH" == "main"'
+  - local: ci/true.yml
+    rules:
+      - if: '"a" == "a" && null == null'
+job:
+  script: [echo]
+""")
+        config, _ = load_and_resolve(root)
+        assert set(config) == {"job", "true_job"}
+
+    def test_without_variables_an_if_without_variables_uses_inputs(self, tmp_path):
+        # The usual way to include a file only when an input is set
+        write(tmp_path / "ci" / "release.yml", "release_job:\n  script: [echo]\n")
+        root = write(tmp_path / ".gitlab-ci.yml", """spec:
+  inputs:
+    version:
+      default: ""
+---
+include:
+  - local: ci/release.yml
+    rules:
+      - if: '"$[[ inputs.version ]]" != ""'
+job:
+  script: [echo]
+""")
+        config, _ = load_and_resolve(root)
+        assert "release_job" not in config
+        config, _ = load_and_resolve(root, inputs={"version": "1.0"})
+        assert "release_job" in config
+
+    def test_without_variables_an_if_with_a_variable_is_not_evaluated(self, tmp_path):
+        # The file is loaded, as it may be included
+        write(tmp_path / "ci" / "jobs.yml", "other_job:\n  script: [echo]\n")
+        root = write(tmp_path / ".gitlab-ci.yml", """
+include:
+  - local: ci/jobs.yml
+    rules:
+      - if: '"" != "" || $RELEASE'
+job:
+  script: [echo]
+""")
+        config, _ = load_and_resolve(root)
+        assert "other_job" in config
 
 
 def test_empty_path_segment_is_a_missing_file(tmp_path):

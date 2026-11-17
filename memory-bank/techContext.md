@@ -40,6 +40,7 @@ cimulator/
 │       ├── loader.py        # YAML loading and include resolution
 │       ├── simulation_engine.py  # Core simulation logic
 │       ├── variable_expander.py  # Variable expansion
+│       ├── expression.py    # GitLab CI expressions (rules:if)
 │       └── workflow.py      # Workflow and rule evaluation
 └── test/                # Test directory
     ├── __init__.py
