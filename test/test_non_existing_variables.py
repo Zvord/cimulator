@@ -42,14 +42,14 @@ def test_non_existing_variables_in_job_definition():
     assert job["variables"]["PATH_WITH_NON_EXISTING"] == "path//file.txt"
 
 def test_non_existing_variables_in_rule_conditions():
-    """Test that non-existing variables in rule conditions are expanded to empty strings."""
+    """Test that non-existing variables in rule conditions are null, as in GitLab: not "", but null."""
     # Define a job with a rule that uses a non-existing variable
     all_jobs = {
         "job1": {
             "script": "echo test",
             "rules": [
                 {
-                    "if": "$NON_EXISTING_VAR == \"\"",  # This should evaluate to true
+                    "if": "$NON_EXISTING_VAR == null",  # This should evaluate to true
                     "when": "always"
                 }
             ]
@@ -58,7 +58,7 @@ def test_non_existing_variables_in_rule_conditions():
             "script": "echo test",
             "rules": [
                 {
-                    "if": "$NON_EXISTING_VAR == \"something\"",  # This should evaluate to false
+                    "if": "$NON_EXISTING_VAR == \"\"",  # This should evaluate to false: null is not ""
                     "when": "always"
                 }
             ]
@@ -74,8 +74,8 @@ def test_non_existing_variables_in_rule_conditions():
     # Run the simulation
     simulation = simulate_pipeline(all_jobs, workflow_config, global_variables)
 
-    # Check that job1 is included in the jobs that will run (since $NON_EXISTING_VAR == "" is true)
+    # Check that job1 is included in the jobs that will run (since $NON_EXISTING_VAR == null is true)
     assert "job1" in simulation["jobs_list"]
 
-    # Check that job2 is not included in the jobs that will run (since $NON_EXISTING_VAR == "something" is false)
+    # Check that job2 is not included in the jobs that will run (since $NON_EXISTING_VAR == "" is false)
     assert "job2" not in simulation["jobs_list"]

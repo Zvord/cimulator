@@ -4,6 +4,7 @@
 Enhanced GitLab CI `!reference` tag support with array flattening capabilities for rules that reference other rule arrays. Recently focused on validation improvements and duplicate job detection.
 
 ## Recent Changes
+- **Condition evaluator as in GitLab**: `rules:if` expressions parsed with GitLab's semantics (null, `!`, regex flags and variables, Ruby-like `&&`/`||`), no `eval`; invalid expressions are errors, checked in every rule as GitLab does; variables written as mappings have their value
 - **Local includes as in GitLab**: Missing or invalid includes are errors; `include:rules` and variables in include paths evaluated with the profile variables; paths matched against the files GitLab sees
 - **Script parsing fix**: Script lines with colons now properly parsed as strings, not dictionaries
 - **Duplicate job detection**: Track job sources across included files with validation warnings

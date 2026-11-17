@@ -1,5 +1,5 @@
 import pytest
-from cimulator.workflow import evaluate_condition, preprocess_condition
+from cimulator.workflow import evaluate_condition
 from cimulator.variable_expander import expand_variables_in_string
 
 def test_variable_expansion_in_complex_conditions():

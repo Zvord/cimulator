@@ -8,7 +8,8 @@ from typing import List, Union, Optional, Tuple, Set, Any, Iterator
 from cimulator.types import ConfigDict, JobDict, JobSourcesDict, JobOccurrencesDict, VariablesDict
 from cimulator.inputs import InputsDict, InputsError, apply_inputs
 from cimulator.variable_expander import expand_variables_in_string
-from cimulator.workflow import evaluate_condition
+from cimulator.expression import ExpressionError, UnsupportedExpression, uses_variables
+from cimulator.workflow import check_condition, evaluate_condition, rules_list
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -452,29 +453,34 @@ def exists_patterns(rule: ConfigDict) -> Optional[List[str]]:
 def rules_need_variables(rules: Any) -> bool:
     """
     Whether include rules, checked by check_include_rules(), can only be
-    evaluated with the pipeline variables.
+    evaluated with the pipeline variables: an `if` that refers to a variable,
+    or an `exists` path with one. An `if` without any, e.g. one that only
+    compares inputs ('"$[[ inputs.version ]]" != ""' once interpolated),
+    has the same value with any variables.
     """
-    return any(rule.get("if") is not None
+    return any((rule.get("if") is not None and uses_variables(rule["if"]))
                or any("$" in p for p in exists_patterns(rule) or [])
                for rule in rules)
 
 INCLUDE_RULE_KEYS = {"if", "exists", "changes", "when"}
 EXISTS_KEYS = {"paths", "regexp", "project", "ref"}
 
-def check_include_rules(rules: Any) -> None:
+def check_include_rules(rules: Any) -> List[ConfigDict]:
     """
     Check the form of the `rules` of an include, as GitLab does for every
     rule before evaluating any: a list of mappings with only the keys
     `if`, `exists`, `changes` and `when`, where `if` is an expression and
-    `when` is `always` or `never`. Raises ValueError otherwise.
-
-    The syntax of an `if` expression is not checked: see include_rules_match().
+    `when` is `always` or `never`. Nested lists of rules are flattened, as
+    for job rules. Returns the rules, flattened. Raises ValueError otherwise,
+    or ExpressionError for an `if` whose syntax GitLab rejects.
     """
-    if not isinstance(rules, list):
-        raise ValueError(f"must be a list of rules, not {rules!r}")
+    if rules is None:
+        raise ValueError("must be a list of rules, not None")
+    rules = rules_list(rules)
+    # Unlike job rules, nested lists cannot leave no rule at all
+    if not rules:
+        raise ValueError("must contain at least one rule")
     for rule in rules:
-        if not isinstance(rule, dict):
-            raise ValueError(f"a rule must be a mapping, not {rule!r}")
         unknown = sorted(str(key) for key in set(rule) - INCLUDE_RULE_KEYS)
         if unknown:
             raise ValueError(f"unknown keys in a rule: {', '.join(unknown)}")
@@ -482,6 +488,8 @@ def check_include_rules(rules: Any) -> None:
         condition = rule.get("if")
         if condition is not None and not isinstance(condition, str):
             raise ValueError(f"if must be an expression, not {condition!r}")
+        if condition is not None:
+            check_condition(condition)
         # when: null is always, as in GitLab; false, '' or 0 are invalid
         if rule.get("when") is not None and rule["when"] not in ("always", "never"):
             raise ValueError(f"when must be always or never, not {rule['when']!r}")
@@ -493,6 +501,7 @@ def check_include_rules(rules: Any) -> None:
             # exists: {} is valid, and matches nothing
             if ("paths" in exists) == ("regexp" in exists):
                 raise ValueError("exists must have either paths or regexp")
+    return rules
 
 def include_rules_match(rules: Any, variables: VariablesDict, root: str) -> bool:
     """
@@ -503,17 +512,18 @@ def include_rules_match(rules: Any, variables: VariablesDict, root: str) -> bool
     cannot be known offline and is taken as matching, as for job rules, and
     so are exists:project and exists:regexp, with a warning.
 
-    An `if` that cannot be evaluated is logged and taken as not matching,
-    as for job rules: the expression may be valid in GitLab but not
-    supported here. The rules must have been checked by check_include_rules().
+    An invalid `if` raises ExpressionError, as GitLab rejects it. A valid one
+    that cannot be evaluated here is logged and taken as not matching, as for
+    job rules. The rules must have been checked by check_include_rules().
     """
     for rule in rules:
         condition = rule.get("if")
         if condition is not None:
             try:
                 matched = evaluate_condition(condition, variables, strict=True)
-            except ValueError as e:
-                logger.warning(f"Cannot evaluate an include rule, taken as not matching: {e}")
+            except UnsupportedExpression as e:
+                logger.warning(f"Cannot evaluate an include rule, taken as not matching: "
+                               f"'{condition}': {e}")
                 matched = False
             if not matched:
                 continue
@@ -613,32 +623,37 @@ def resolve_includes(config: ConfigDict, base_path: str,
         elif isinstance(inc, dict) and "local" in inc:
             local = inc["local"]
             include_inputs = inc.get("inputs")
-            rules = inc.get("rules")
             if not isinstance(local, str) or not local:
                 raise ValueError(f"Include {inc}: 'local' must be the path of a file")
         else:
             local = None
+
+        if isinstance(inc, dict) and inc.get("rules") is not None:
+            # Checked whether or not the rules can be evaluated, as GitLab
+            # checks every rule, even after one that matches, and for every
+            # kind of include
+            try:
+                rules = check_include_rules(inc["rules"])
+            except ValueError as e:
+                raise ValueError(f"Include {inc}: rules: {e}") from e
+
         if local is None:
             # remote, project, template and component includes need access to
             # other repositories or servers: cimulator works offline, skip them.
             logger.debug(f"Skipping non-local include {inc}")
             continue
 
-        if rules is not None:
-            # Checked whether or not the rules can be evaluated, as GitLab
-            # checks every rule, even after one that matches
-            try:
-                check_include_rules(rules)
-            except ValueError as e:
-                raise ValueError(f"Include {inc}: rules: {e}") from e
-
         # Whether the include depends on variables that are not known.
-        # Rules without any variable (only exists, or when) are evaluated
-        # even without them.
+        # Rules without any variable (an if or exists without any, or when)
+        # are evaluated even without them.
         undecidable = variables is None and (
             "$" in local or (rules is not None and rules_need_variables(rules)))
         if rules is not None and not undecidable:
-            if not include_rules_match(rules, variables or {}, root_path):
+            try:
+                keep = include_rules_match(rules, variables or {}, root_path)
+            except ExpressionError as e:
+                raise ValueError(f"Include {inc}: rules: {e}") from e
+            if not keep:
                 logger.debug(f"Skipping include {inc}: its rules do not match")
                 continue
         if variables is not None:

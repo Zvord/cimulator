@@ -7,9 +7,11 @@ focusing on job dependencies and relationships.
 
 import logging
 from typing import List, Set, Optional, Union
-from cimulator.types import JobDict, JobSourcesDict
-from cimulator.job_expander import expand_pipeline_jobs
+from cimulator.expression import ExpressionError
+from cimulator.job_expander import expand_job, expand_pipeline_jobs
 from cimulator.matrix import MatrixInstancesDict
+from cimulator.types import ConfigDict, JobDict, JobSourcesDict
+from cimulator.workflow import check_condition, rules_list
 
 # Get a logger for this module
 logger = logging.getLogger(__name__)
@@ -141,6 +143,47 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
     # The same error is found once per job that extends the same broken
     # template, or once per job of a matrix job: report it once
     return list(dict.fromkeys(errors))
+
+def validate_rules(all_jobs: JobDict, workflow_config: Optional[ConfigDict]) -> List[str]:
+    """
+    Check the form of the rules and the syntax of every `rules:if`, as
+    GitLab does before evaluating any rule, even after one that matches: in
+    the workflow, and in every job that is not hidden, with the rules it gets
+    through `extends`. GitLab does not check hidden jobs. A job whose
+    `extends` cannot be resolved is left to validate_job_dependencies().
+
+    Returns:
+        list: The errors, with the job or workflow they are in.
+    """
+    rules_of = []
+    if isinstance(workflow_config, dict):
+        rules_of.append(("workflow", workflow_config.get("rules")))
+    cache: JobDict = {}
+    for job_name in all_jobs:
+        if job_name.startswith('.'):
+            continue
+        try:
+            job = expand_job(job_name, all_jobs, cache)
+        except Exception:
+            continue
+        rules_of.append((f"Job '{job_name}'", job.get("rules")))
+
+    errors = []
+    for where, rules in rules_of:
+        try:
+            rules = rules_list(rules)
+        except ValueError as e:
+            errors.append(f"{where}: rules: {e}")
+            continue
+        # Every invalid if, not only the first one
+        for rule in rules:
+            # if: null is no condition
+            if rule.get("if") is not None:
+                try:
+                    check_condition(rule["if"])
+                except ValueError as e:
+                    errors.append(f"{where}: rules: {e}")
+    return errors
 
 def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[str],
                                     matrix_instances: Optional[MatrixInstancesDict] = None) -> List[dict]:

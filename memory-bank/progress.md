@@ -51,6 +51,12 @@ The project is structured as a Python package with a clear modular architecture 
 
 ## Recent Improvements
 
+- **Condition evaluator** (`expression.py`), `rules:if` evaluated as GitLab does (checked against GitLab's pipeline dry run, recorded in `test/test_expression.py`):
+   - Expressions are parsed, not pasted into Python code, with GitLab's semantics: undefined variables are null (not ""), `null`, `!`, Ruby-like `&&`/`||` (returning an operand, the right one not evaluated when the left one decides; only blank text is false at the end), `=~` with regex literals, flags and patterns held in strings or variables (`/.../flags` with any text between the slashes), regexes translated from RE2 to Python (ASCII `\d`/`\w`/`\s`/`\b`, `$` as end of text without `m`, POSIX classes, `\Q...\E`, `\x{...}`, octal escapes, literal `{,n}` and `{01}`, repetitions up to 1000, also multiplied when nested, `\C` as any character on ASCII text, unsupported on other text, but plain text in `\Q...\E`), variables written as mappings (`{value: ...}`) by their value, and variables without a value (`FOO:`) as empty (not null); variable values are text everywhere (`true` stays `true` in rules and scripts, as do rule and workflow variables); a regex on the left of `=~` is matched as GitLab's description of the object, not its source
+   - Every rule is checked before any is evaluated, in `simulate` and `validate`, and every invalid rule of the workflow and of the jobs is reported (an invalid include rule stops the loading, as the first error) (workflow, jobs that are not hidden after `extends`, include rules of every kind), as GitLab rejects any invalid one: a non-empty list of mappings, nested lists flattened up to 10 levels (include rules must keep at least one rule), and the syntax of every `if`
+   - Without workflow rules, the pipeline runs. Hidden jobs' rules are neither checked nor evaluated. An empty `variables:`, `workflow:` or `default:` has nothing. Simulated jobs (`jobs` and `all_expanded_jobs`) show their rules as written, as their needs, each with its own copy; the `simulate` output writes every value in full, without YAML aliases (also for what the configuration shares through anchors)
+   - In `validate`, without a profile, an include rule whose `if` refers to no variable (e.g. it only compares inputs) is evaluated: variables are not expanded in quoted strings
+   - Valid expressions Python cannot evaluate (the `U` flag, `\p{...}`, flags in the middle of a pattern) are warnings, taken as not matching, only when the result depends on them
 - **`parallel:matrix`**: matrix jobs expanded after `extends` (`matrix.py`); `validate` checks needs on the jobs as GitLab creates them and reports jobs that cannot be expanded (circular or missing `extends`, unknown matrix expression) as errors instead of stopping
 - **Local includes**, loaded as GitLab does (checked against GitLab's pipeline dry run):
    - Missing or invalid includes are errors, not warnings: missing file, YAML syntax, no YAML extension, empty file, `spec` header with nothing after it, not a mapping, include cycle, and the form of every include rule (in both commands, even after a rule that matched)
@@ -71,7 +77,6 @@ The project is structured as a Python package with a clear modular architecture 
 2. **Incomplete GitLab CI support**: Missing some advanced features
 3. **Limited validation**: Need more schema and best practices validation
 4. **Performance**: Large configurations may have performance issues
-5. **Condition evaluator** (`workflow.py`): variable values are pasted into a Python expression, so values with quotes or backslashes are misread; `null`, regex flags, regexes held in variables and undefined variables in regexes are not supported (such job rules are taken as not matching, include rules too with a warning)
 
 ## Next Development Priorities
 
