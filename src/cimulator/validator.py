@@ -38,6 +38,10 @@ def detect_duplicate_jobs(all_jobs: JobDict, job_sources: Optional[JobSourcesDic
     if job_sources:
         # Find duplicate jobs by looking for jobs with duplicate sources
         for job_name, _ in all_jobs.items():
+            # Overriding a template (a hidden job) is the usual way to
+            # customise an included one: not reported
+            if job_name.startswith('.'):
+                continue
             # Check if this job has duplicates entry in job_sources
             duplicate_key = f"{job_name}__duplicates"
             if duplicate_key in job_sources:
@@ -48,7 +52,10 @@ def detect_duplicate_jobs(all_jobs: JobDict, job_sources: Optional[JobSourcesDic
                 # Filter out duplicate sources that match the original source
                 # This prevents false positives when a job is defined only once
                 # but appears in duplicates due to how the loader processes the file
-                unique_duplicate_sources = [src for src in duplicate_sources if src != original_source]
+                # A file included several times, e.g. through two files that
+                # both include it, is named once, in order
+                unique_duplicate_sources = list(dict.fromkeys(
+                    src for src in duplicate_sources if src != original_source))
 
                 # Only report as duplicate if there are sources different from the original
                 if unique_duplicate_sources:
@@ -61,6 +68,8 @@ def detect_duplicate_jobs(all_jobs: JobDict, job_sources: Optional[JobSourcesDic
     else:
         # If no job_sources available, fall back to simple duplicate detection
         for job_name in all_jobs:
+            if job_name.startswith('.'):
+                continue
             if job_name in seen_jobs:
                 warning = f"Duplicate job '{job_name}' found."
                 duplicate_warnings.append(warning)
@@ -88,7 +97,7 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
         if job_name.startswith('.'):
             continue
 
-        if isinstance(job, dict) and 'extends' in job:
+        if isinstance(job, dict) and job.get('extends') is not None:
             extends_field = job['extends']
             if not isinstance(extends_field, list):
                 extends_field = [extends_field]
@@ -118,7 +127,7 @@ def validate_job_dependencies(all_jobs: JobDict) -> List[str]:
         if job_name.startswith('.'):
             continue
 
-        if isinstance(job, dict) and 'needs' in job:
+        if isinstance(job, dict) and job.get('needs') is not None:
             needs_field = job['needs']
             if not isinstance(needs_field, list):
                 needs_field = [needs_field]
@@ -206,7 +215,7 @@ def validate_job_needs_dependencies(simulation_jobs: JobDict, running_jobs: Set[
     # Only check needs dependencies for jobs that will run
     for job_name in running_jobs:
         job = simulation_jobs[job_name]
-        if 'needs' in job:
+        if job.get('needs') is not None:
             needs_field = job['needs']
             if not isinstance(needs_field, list):
                 needs_field = [needs_field]

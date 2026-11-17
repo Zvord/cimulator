@@ -200,7 +200,7 @@ def _expand_matrix_job(job_name: str, job: Dict[str, Any],
                        on_error: Optional[ErrorHandler]) -> JobDict:
     """The jobs GitLab creates for one (non-template, expanded) job."""
     if not is_matrix_job(job):
-        if "needs" in job:
+        if job.get("needs") is not None:
             job = {**job, "needs": expand_matrix_needs(job["needs"], None, job_name, on_error)}
         return {job_name: job}
 
@@ -216,7 +216,7 @@ def _expand_matrix_job(job_name: str, job: Dict[str, Any],
         del instance["parallel"]
         variables = instance.get("variables") or {}
         instance["variables"] = {**variables, **combination}
-        if "needs" in instance:
+        if instance.get("needs") is not None:
             instance["needs"] = expand_matrix_needs(instance["needs"], combination, job_name, on_error)
         jobs[name] = instance
     return jobs
