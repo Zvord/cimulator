@@ -1,8 +1,8 @@
 # src/cimulator/job_expander.py
 
-from typing import List, Set, Optional, Tuple
+from typing import Dict, List, Set, Optional, Tuple
 from cimulator.types import JobDict
-from cimulator.loader import merge_dicts
+from cimulator.loader import GLOBAL_KEYWORDS, merge_dicts
 from cimulator.matrix import ErrorHandler, MatrixInstancesDict, expand_matrix_jobs
 
 # Keys of a job that GitLab reads as absent when null, e.g. a null that
@@ -76,6 +76,9 @@ def expand_job(job_name: str, all_jobs: JobDict, cache: Optional[JobDict] = None
     # Start with an empty parent configuration.
     merged_parent: JobDict = {}
     for parent_name in extends_field:
+        # As GitLab: "unknown keys in `extends`"
+        if not isinstance(parent_name, str):
+            raise Exception(f"Job '{job_name}' extends {parent_name!r}, which is not a job name")
         if parent_name not in all_jobs:
             raise Exception(f"Job '{job_name}' extends non-existing job '{parent_name}'")
         # Recursively expand parent job
@@ -133,6 +136,32 @@ def expand_all_jobs(all_jobs: JobDict, skip_templates: bool = False,
             on_error(job_name, str(e))
             expanded[job_name] = job
     return expanded
+
+def with_unknown_parents(all_jobs: JobDict) -> Tuple[JobDict, Dict[str, List[str]]]:
+    """
+    The jobs, with an empty job for each job they extend that is not defined:
+    one that may come from a non-local include, which cimulator does not
+    load, so that the jobs can still be expanded with what is known of them.
+    A global keyword (`default`, `stages`, ...) is not one: no include makes
+    it a job, so extending it stays an error.
+
+    Returns:
+        tuple: (jobs, unknown_parents)
+            - jobs: all_jobs with an empty job for each unknown parent.
+            - unknown_parents: the jobs that extend each unknown parent.
+    """
+    unknown_parents: Dict[str, List[str]] = {}
+    for job_name, job in all_jobs.items():
+        if not isinstance(job, dict):
+            continue
+        parents = job.get("extends", [])
+        for parent_name in parents if isinstance(parents, list) else [parents]:
+            if isinstance(parent_name, str) and parent_name not in all_jobs \
+                    and parent_name not in GLOBAL_KEYWORDS:
+                unknown_parents.setdefault(parent_name, []).append(job_name)
+    if not unknown_parents:
+        return all_jobs, unknown_parents
+    return {**all_jobs, **{name: {} for name in unknown_parents}}, unknown_parents
 
 def expand_pipeline_jobs(all_jobs: JobDict, skip_templates: bool = False,
                          on_error: Optional[ErrorHandler] = None

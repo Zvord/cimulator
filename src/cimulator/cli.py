@@ -113,18 +113,28 @@ def main() -> None:
 
     if args.command == "validate":
         try:
-            config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input))
+            external_includes: list = []
+            config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input),
+                                                   external_includes=external_includes)
 
             # Extract jobs from the configuration
             jobs = extract_jobs(config)
 
-            # Validate job dependencies, and the rules (their form and the
-            # syntax of every if)
-            validation_errors = validate_job_dependencies(jobs)
+            # Validate job dependencies. With non-local includes, a job that
+            # is not defined may come from one of them: only a warning.
+            dependency_warnings: List[str] = []
+            validation_errors = validate_job_dependencies(jobs, bool(external_includes),
+                                                          dependency_warnings)
             validation_errors += validate_rules(jobs, config.get("workflow"))
 
             # Check for duplicate jobs
             duplicate_warnings = detect_duplicate_jobs(jobs, job_sources)
+
+            # Shown also when validation fails, with the errors after them
+            if dependency_warnings:
+                print("Warnings about jobs that are not defined:", file=sys.stderr)
+                for warning in dependency_warnings:
+                    print(f"  - {warning}", file=sys.stderr)
 
             if validation_errors:
                 print("Validation failed with the following errors:", file=sys.stderr)
@@ -162,7 +172,9 @@ def main() -> None:
             # Load the GitLab CI configuration. Includes use the profile
             # variables in their path and rules, as GitLab uses the
             # predefined, project and pipeline variables there.
-            ci_config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input), profile_vars)
+            external_includes = []
+            ci_config, job_sources = load_and_resolve(args.ci_file, parse_cli_inputs(args.input), profile_vars,
+                                                      external_includes)
             # Extract jobs from the configuration.
             # For simplicity, we treat all keys that are not reserved as jobs.
             # Also filter out non-dictionary values as they can't be valid jobs
@@ -184,7 +196,8 @@ def main() -> None:
             global_vars = {**gitlab_vars, **profile_vars}
 
             # Run the simulation.
-            simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars)
+            simulation_summary = simulate_pipeline(jobs, workflow_config, global_vars,
+                                                   bool(external_includes))
 
             # First, dump the simulation summary to YAML
             yaml_content = yaml.dump(simulation_summary, Dumper=NoAliasDumper, default_flow_style=False)
@@ -237,6 +250,12 @@ def main() -> None:
             if simulation_summary.get("dependency_errors"):
                 print("\nWarnings about job dependencies:", file=sys.stderr)
                 for error in simulation_summary["dependency_errors"]:
+                    # A job that may come from a non-local include is only a
+                    # warning: it may well be defined there
+                    if error.get("from_non_local_include", False):
+                        print(f"  - [Non-local include] {error['message']}", file=sys.stderr)
+                        continue
+
                     # Check if this is a non-optional dependency error
                     if not error.get("is_optional", False):
                         has_non_optional_dependency_error = True

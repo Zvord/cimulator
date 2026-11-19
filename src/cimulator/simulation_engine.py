@@ -1,12 +1,12 @@
 import copy
 import logging
-from typing import List, Set, Tuple, Optional, Union
+from typing import List, Set, Tuple, Optional, Union, Dict
 from cimulator.types import JobDict, ConfigDict, VariablesDict
-from cimulator.job_expander import expand_pipeline_jobs
+from cimulator.job_expander import expand_pipeline_jobs, with_unknown_parents
 from cimulator.expression import ExpressionError
 from cimulator.workflow import evaluate_workflow, evaluate_rules
 from cimulator.variable_expander import expand_variables, variable_values
-from cimulator.validator import validate_job_needs_dependencies, validate_rules
+from cimulator.validator import validate_job_needs_dependencies, validate_rules, unknown_parent_warnings
 
 # Get the logger for this module
 logger = logging.getLogger(__name__)
@@ -24,7 +24,8 @@ def keep_as_written(expanded_job: JobDict, job: JobDict) -> JobDict:
             expanded_job[key] = copy.deepcopy(job[key])
     return expanded_job
 
-def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_variables: VariablesDict) -> ConfigDict:
+def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_variables: VariablesDict,
+                      external_includes: bool = False) -> ConfigDict:
     """
     Simulate a pipeline by processing jobs, evaluating workflow rules, and expanding variables.
 
@@ -42,6 +43,11 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
         all_jobs (dict): Dictionary of job definitions.
         workflow_config (dict): Workflow configuration dictionary.
         global_variables (dict): Global variables for the simulation.
+        external_includes (bool): Whether the configuration has non-local
+            includes, which cimulator does not load. A job that extends a job
+            that is not defined is then expanded with what is known of it,
+            with a warning, and a needed job that is not defined is reported
+            as one that may come from them.
 
     Returns:
         dict: A simulation summary that includes:
@@ -76,7 +82,15 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
 
     # Expand all job definitions, then split parallel:matrix jobs into one job
     # per matrix combination.
+    unknown_parents: Dict[str, List[str]] = {}
+    if external_includes:
+        all_jobs, unknown_parents = with_unknown_parents(all_jobs)
+        for warning in unknown_parent_warnings(unknown_parents):
+            logger.warning(warning)
     expanded_jobs, matrix_instances = expand_pipeline_jobs(all_jobs)
+    # A job that is only known as a parent is not defined: it does not run
+    for parent_name in unknown_parents:
+        expanded_jobs.pop(parent_name, None)
     simulation_jobs = {}
 
     # Process jobs in a deterministic order to ensure dependencies are handled correctly
@@ -154,7 +168,8 @@ def simulate_pipeline(all_jobs: JobDict, workflow_config: ConfigDict, global_var
 
     # Check for needs dependencies on jobs that won't run
     running_jobs = set(jobs_list)
-    dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs, matrix_instances)
+    dependency_errors = validate_job_needs_dependencies(simulation_jobs, running_jobs, matrix_instances,
+                                                        set(expanded_jobs), external_includes)
 
     # Include all expanded jobs (including template jobs) for debugging
     # TODO rewrite this AI garbage

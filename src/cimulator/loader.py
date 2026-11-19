@@ -469,6 +469,22 @@ def exists_patterns(rule: ConfigDict) -> Optional[List[str]]:
         return None
     return [str(p) for p in (exists if isinstance(exists, list) else [exists])]
 
+def condition_needs_variables(condition: Any) -> bool:
+    """
+    Whether the `if` of an include rule can only be evaluated with the
+    pipeline variables: one that refers to none (e.g. it only compares
+    inputs) is evaluated without them.
+    """
+    return condition is not None and uses_variables(condition)
+
+def rule_needs_variables(rule: ConfigDict) -> bool:
+    """
+    Whether an include rule, checked by check_include_rules(), can only be
+    evaluated with the pipeline variables.
+    """
+    return (condition_needs_variables(rule.get("if"))
+            or any("$" in p for p in exists_patterns(rule) or []))
+
 def rules_need_variables(rules: Any) -> bool:
     """
     Whether include rules, checked by check_include_rules(), can only be
@@ -477,9 +493,85 @@ def rules_need_variables(rules: Any) -> bool:
     compares inputs ('"$[[ inputs.version ]]" != ""' once interpolated),
     has the same value with any variables.
     """
-    return any((rule.get("if") is not None and uses_variables(rule["if"]))
-               or any("$" in p for p in exists_patterns(rule) or [])
-               for rule in rules)
+    return any(rule_needs_variables(rule) for rule in rules)
+
+def local_exists_matches(rule: ConfigDict, variables: Optional[VariablesDict], root: str) -> Optional[bool]:
+    """
+    Whether the `exists` of an include rule matches a file: True without
+    `exists`, None if that cannot be known here (another project, a regexp,
+    or, without variables, a path that has some and matches no file).
+    """
+    if unchecked_exists(rule):
+        return None
+    patterns = exists_patterns(rule)
+    if patterns is None:
+        return True
+    unknown = False
+    for pattern in patterns:
+        if variables is None and "$" in pattern:
+            unknown = True
+        elif exists_matches(expand_defined_variables(pattern, variables or {}), root):
+            return True
+    return None if unknown else False
+
+def include_rule_matches(rule: ConfigDict, variables: Optional[VariablesDict], root: str) -> Optional[bool]:
+    """
+    Whether a rule of a non-local include matches, or None if that cannot be
+    decided here. A local `exists` that matches no file decides, whatever
+    the rest of the rule: it is checked first. Otherwise the rule cannot be
+    decided if its `if` depends on variables that are not known (`variables`
+    is None, as in validate) or cannot be evaluated, if its `exists` cannot
+    be checked (another project, a regexp), or if it has `changes`, which
+    are not known offline.
+    """
+    exists = local_exists_matches(rule, variables, root)
+    if exists is False:
+        return False
+    condition = rule.get("if")
+    matched: Optional[bool] = True
+    if condition is not None:
+        if variables is None and condition_needs_variables(condition):
+            matched = None
+        else:
+            try:
+                matched = bool(evaluate_condition(condition, variables or {}, strict=True))
+            except ValueError as e:
+                logger.warning(f"Cannot evaluate a rule of a non-local include, "
+                               f"taken as possibly matching: '{condition}': {e}")
+                matched = None
+            if matched is False:
+                return False
+    unchecked = unchecked_exists(rule)
+    if unchecked:
+        logger.warning(f"Cannot check {unchecked} of a rule of a non-local include, "
+                       f"taken as possibly matching")
+    if "changes" in rule:
+        logger.warning("Cannot check changes of a rule of a non-local include, "
+                       "taken as possibly matching")
+        return None
+    if exists is None:
+        return None
+    return matched
+
+def include_may_be_loaded(rules: Any, variables: Optional[VariablesDict], root: str) -> bool:
+    """
+    Whether GitLab may load an include that cimulator does not (a non-local
+    one), from its `rules`: evaluated in order as include_rules_match() does,
+    but a rule that cannot be decided here (see include_rule_matches()),
+    before any rule decides, makes it possibly loaded. Such a rule with
+    `when: never` can only exclude the include, so the next rules decide.
+    The rules must have been checked by check_include_rules().
+    """
+    for rule in rules:
+        never = rule.get("when") == "never"
+        matched = include_rule_matches(rule, variables, root)
+        if matched is False or (matched is None and never):
+            continue
+        return not never
+    return False
+
+# The kinds of include that are not local, which cimulator does not load
+NON_LOCAL_INCLUDE_KINDS = ("remote", "project", "template", "component", "artifact")
 
 INCLUDE_RULE_KEYS = {"if", "exists", "changes", "when"}
 EXISTS_KEYS = {"paths", "regexp", "project", "ref"}
@@ -574,13 +666,30 @@ def yaml_without_configuration(file_path: str) -> Optional[str]:
         return SPEC_WITHOUT_CONFIGURATION
     return None
 
+def describe_include(inc: Any) -> str:
+    """
+    A short description of a non-local include, e.g. "project group/repo:ci/a.yml",
+    without its inputs, which can be long.
+    """
+    if isinstance(inc, dict):
+        for kind in ("component", "project", "remote", "template", "artifact"):
+            if kind in inc:
+                target = inc[kind]
+                if kind == "project" and "file" in inc:
+                    target = f"{target}:{inc['file']}"
+                elif kind == "artifact" and "job" in inc:
+                    target = f"{target} of job {inc['job']}"
+                return f"{kind} {target}"
+    return str(inc)
+
 def resolve_includes(config: ConfigDict, base_path: str,
                     root_path: Optional[str] = None, depth: int = 0,
                     current_file: Optional[str] = None,
                     job_sources: Optional[JobSourcesDict] = None,
                     all_job_occurrences: Optional[JobOccurrencesDict] = None,
                     variables: Optional[VariablesDict] = None,
-                    include_chain: Tuple[str, ...] = ()) -> ConfigDict:
+                    include_chain: Tuple[str, ...] = (),
+                    external_includes: Optional[List[Any]] = None) -> ConfigDict:
     """
     Recursively resolve and merge included YAML files.
     The 'include' key in the YAML file can be a string (for a single include),
@@ -602,6 +711,11 @@ def resolve_includes(config: ConfigDict, base_path: str,
             and skipped with a warning otherwise.
         include_chain (tuple): The files that include the current one, to
             detect an include cycle.
+        external_includes (list): Filled with the non-local includes (remote,
+            project, template, component) that are not loaded, as cimulator
+            works offline, but that GitLab would load: those whose rules
+            match, or cannot be evaluated without the variables. Their jobs
+            are unknown.
 
     Returns:
         dict: The configuration with all includes resolved and merged.
@@ -659,9 +773,33 @@ def resolve_includes(config: ConfigDict, base_path: str,
                 raise ValueError(f"Include {inc}: rules: {e}") from e
 
         if local is None:
+            # An empty entry is ignored, as GitLab does
+            if inc is None:
+                continue
+            # Any other entry must be a non-local include, as GitLab requires
+            if isinstance(inc, dict):
+                if not any(kind in inc for kind in NON_LOCAL_INCLUDE_KINDS):
+                    raise ValueError(f"Include {inc}: not a valid include, which has one of "
+                                     f"local, {', '.join(NON_LOCAL_INCLUDE_KINDS)}")
+                if "project" in inc and "file" not in inc:
+                    raise ValueError(f"Include {inc}: a project include must have a file")
+                if "artifact" in inc and "job" not in inc:
+                    raise ValueError(f"Include {inc}: an artifact include must have the job "
+                                     f"to fetch the artifact from")
+            elif not isinstance(inc, str):
+                raise ValueError(f"Include {inc!r}: not a valid include")
             # remote, project, template and component includes need access to
-            # other repositories or servers: cimulator works offline, skip them.
-            logger.debug(f"Skipping non-local include {inc}")
+            # other repositories or servers: cimulator works offline, skip
+            # them. Their rules, checked above, tell whether GitLab may load
+            # them.
+            if rules is not None:
+                if not include_may_be_loaded(rules, variables, root_path):
+                    logger.debug(f"Skipping include {inc}: its rules do not match")
+                    continue
+            logger.info(f"Not loading non-local include {describe_include(inc)}: "
+                        f"cimulator works offline")
+            if external_includes is not None:
+                external_includes.append(inc)
             continue
 
         # Whether the include depends on variables that are not known.
@@ -721,7 +859,8 @@ def resolve_includes(config: ConfigDict, base_path: str,
                 job_sources,
                 all_job_occurrences,
                 variables,
-                chain
+                chain,
+                external_includes
             )
 
             merged = merge_included(merged, included_config)
@@ -734,7 +873,9 @@ def resolve_includes(config: ConfigDict, base_path: str,
     return merge_included(merged, config)
 
 def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
-                     variables: Optional[VariablesDict] = None) -> Tuple[ConfigDict, JobSourcesDict]:
+                     variables: Optional[VariablesDict] = None,
+                     external_includes: Optional[List[Any]] = None
+                     ) -> Tuple[ConfigDict, JobSourcesDict]:
     """
     Load the root YAML file and resolve all includes recursively.
 
@@ -743,6 +884,8 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
         inputs (dict): Pipeline inputs for the root file's `spec:inputs` header.
         variables (dict): The variables includes can use in their path and
             rules, e.g. those of a simulation profile. See resolve_includes().
+        external_includes (list): Filled with the non-local includes that
+            GitLab would load but cimulator does not. See resolve_includes().
 
     Returns:
         tuple: (resolved_config, job_sources)
@@ -768,7 +911,8 @@ def load_and_resolve(file_path: str, inputs: Optional[InputsDict] = None,
 
     # Resolve includes and track job sources
     resolved_config = resolve_includes(config, base_path, base_path, 0, file_path, job_sources,
-                                       all_job_occurrences, variables)
+                                       all_job_occurrences, variables,
+                                       external_includes=external_includes)
 
     # Now that all includes are resolved, resolve any reference tags
     resolved_config = resolve_references(resolved_config, resolved_config)
